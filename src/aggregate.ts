@@ -317,6 +317,29 @@ function pickStat(stats: SeriesStats, stat: Stat): number {
   return stats[stat];
 }
 
+/** Warnings from every run, not only the median. A clean set contributes nothing. */
+function pageLoadAcross(reports: NormalizedReport[]): { runWarnings?: string[]; runtimeError?: string } {
+  const warnings: string[] = [];
+  const seenWarnings = new Set<string>();
+  const errors: string[] = [];
+  const seenErrors = new Set<string>();
+  for (const report of reports) {
+    for (const warning of report.runWarnings ?? []) {
+      if (seenWarnings.has(warning)) continue;
+      seenWarnings.add(warning);
+      warnings.push(warning);
+    }
+    if (report.runtimeError && !seenErrors.has(report.runtimeError)) {
+      seenErrors.add(report.runtimeError);
+      errors.push(report.runtimeError);
+    }
+  }
+  return {
+    ...(warnings.length > 0 ? { runWarnings: warnings } : {}),
+    ...(errors.length > 0 ? { runtimeError: errors.join(' · ') } : {}),
+  };
+}
+
 /**
  * The rows of an insight and the ownership counts worked out from them.
  *
@@ -575,6 +598,7 @@ export function aggregateReports(
     stats: statsByStat,
     insights,
     fieldData: first?.fieldData ?? null,
+    ...pageLoadAcross(reports),
     // Filled in by the runner once targets are known.
     targets: { strategy, targets: {}, meetsTarget: false, gaps: [] },
     errors,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ITEMS, groupForAudit, normalizeReport } from '../src/insights.js';
+import { groupForAudit, normalizeReport } from '../src/insights.js';
+import { aggregateReports } from '../src/aggregate.js';
 import { FIXTURE_URL, makeReport, normalizeFixture } from './helpers.js';
 
 describe('normalizeReport', () => {
@@ -59,11 +60,48 @@ describe('normalizeReport', () => {
     expect(audit?.metricsAffected).toEqual(['lcp', 'tbt']);
   });
 
-  it('trims details.items to the top 25 and records the original count', () => {
+  it('keeps every insight row, and the text view is what stays capped', () => {
     const report = normalizeFixture();
     const audit = report.insights.find((i) => i.id === 'image-delivery-insight');
-    expect(audit?.items).toHaveLength(MAX_ITEMS);
+    expect(audit?.items).toHaveLength(30);
     expect(audit?.itemsTotal).toBe(30);
+  });
+
+  it('keeps a framework note and drops its icon', () => {
+    const report = normalizeFixture((raw) => {
+      const audits = (raw.lighthouseResult as { audits: Record<string, Record<string, unknown>> }).audits;
+      audits['render-blocking-resources'].stackPacks = [
+        {
+          id: 'wordpress',
+          title: 'WordPress',
+          iconDataURL: 'data:image/svg+xml,icon',
+          description: 'Defer the render-blocking script.',
+        },
+      ];
+    });
+    const audit = report.insights.find((i) => i.id === 'render-blocking-resources');
+    expect(audit?.stackPacks).toEqual([
+      { id: 'wordpress', title: 'WordPress', description: 'Defer the render-blocking script.' },
+    ]);
+    expect(JSON.stringify(audit?.stackPacks)).not.toContain('data:image');
+  });
+
+  it('records a page-load warning without adding one to a clean run', () => {
+    const clean = normalizeFixture();
+    expect(clean.runWarnings).toBeUndefined();
+    expect(clean.runtimeError).toBeUndefined();
+
+    const warned = normalizeFixture((raw) => {
+      const result = raw.lighthouseResult as { runWarnings?: string[]; runtimeError?: unknown };
+      result.runWarnings = ['The page loaded too slowly to finish tracing.'];
+      result.runtimeError = { code: 'ERRORED_DOCUMENT_REQUEST', message: 'the page failed' };
+    });
+    expect(warned.runWarnings).toEqual(['The page loaded too slowly to finish tracing.']);
+    expect(warned.runtimeError).toBe('ERRORED_DOCUMENT_REQUEST: the page failed');
+
+    const aggregated = aggregateReports([clean, warned], { reportId: 'r', runsRequested: 2 });
+    expect(aggregated.runWarnings).toEqual(['The page loaded too slowly to finish tracing.']);
+    expect(aggregated.runtimeError).toBe('ERRORED_DOCUMENT_REQUEST: the page failed');
   });
 
   it('always reports itemsTotal, even when nothing was trimmed', () => {

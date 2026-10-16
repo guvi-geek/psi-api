@@ -19,8 +19,6 @@ import type {
 import { CACHE_BUST_PARAM } from './psiClient.js';
 import { METRIC_KEYS } from './types.js';
 
-export const MAX_ITEMS = 25;
-
 /** Audit ids that correspond to each headline metric. */
 const METRIC_AUDIT_IDS: Record<MetricKey, string[]> = {
   fcp: ['first-contentful-paint'],
@@ -143,6 +141,7 @@ type RawAudit = {
   numericUnit?: unknown;
   metricSavings?: unknown;
   details?: unknown;
+  stackPacks?: unknown;
 };
 
 type RawAuditRef = { id?: unknown; group?: unknown; relevantAudits?: unknown };
@@ -157,6 +156,8 @@ type RawPsiResponse = {
     environment?: Record<string, unknown>;
     categories?: Record<string, unknown>;
     audits?: Record<string, RawAudit>;
+    runWarnings?: unknown;
+    runtimeError?: unknown;
   };
   loadingExperience?: unknown;
   originLoadingExperience?: unknown;
@@ -524,12 +525,69 @@ function itemsFromDetails(details: unknown): { items?: unknown[]; itemsTotal: nu
     return { itemsTotal: 0 };
   }
   return {
-    items: items.slice(0, MAX_ITEMS),
-    // Always set, not just when trimmed. A stored run that reported itemsTotal
-    // only past the 25-item cut made "how many rows are there" unanswerable for
-    // every smaller insight.
+    // Every row is kept. The text view still prints the first 25; `--json` has the rest.
+    items,
     itemsTotal: items.length,
   };
+}
+
+/**
+ * Framework notes on one audit, without the embedded icon.
+ *
+ * The icon is an image payload. Keeping it would put a picture in every
+ * report that has a stack pack, which is the opposite of what the note is for.
+ */
+function stackPacksFrom(audit: RawAudit): Insight['stackPacks'] {
+  if (!Array.isArray(audit.stackPacks)) return undefined;
+  const notes: NonNullable<Insight['stackPacks']> = [];
+  for (const entry of audit.stackPacks) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const description = asString(record.description).trim();
+    if (!description) continue;
+    const title = asString(record.title).trim();
+    const id = asString(record.id).trim() || title;
+    if (!id) continue;
+    notes.push({ id, title: title || id, description });
+  }
+  return notes.length > 0 ? notes : undefined;
+}
+
+/** Chrome's own account of a page that did not load cleanly. Empty when it did. */
+function pageLoadFrom(result: NonNullable<RawPsiResponse['lighthouseResult']>): {
+  runWarnings?: string[];
+  runtimeError?: string;
+} {
+  const runWarnings = Array.isArray(result.runWarnings)
+    ? result.runWarnings.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
+    : [];
+  const runtime = result.runtimeError;
+  let runtimeError = '';
+  if (typeof runtime === 'string') runtimeError = runtime.trim();
+  else if (runtime && typeof runtime === 'object') {
+    const record = runtime as Record<string, unknown>;
+    runtimeError = [asString(record.code).trim(), asString(record.message).trim()].filter(Boolean).join(': ');
+  }
+  return {
+    ...(runWarnings.length > 0 ? { runWarnings } : {}),
+    ...(runtimeError ? { runtimeError } : {}),
+  };
+}
+
+/** Drop embedded images so keeping every row does not keep the filmstrip. */
+function omitEmbeddedImages(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return value.startsWith('data:image') ? undefined : value;
+  if (depth > 6 || !value || typeof value !== 'object') return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => omitEmbeddedImages(entry, depth + 1)).filter((entry) => entry !== undefined);
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (key === 'screenshot' || key === 'iconDataURL') continue;
+    const next = omitEmbeddedImages(entry, depth + 1);
+    if (next !== undefined) out[key] = next;
+  }
+  return out;
 }
 
 /** Every `details.items` row, with the cache-busting param removed from any URL. */
@@ -537,7 +595,7 @@ function detailItemsOf(details: unknown): unknown[] {
   if (!details || typeof details !== 'object') return [];
   const items = (details as { items?: unknown }).items;
   if (!Array.isArray(items)) return [];
-  return items.map((item) => stripCacheBustDeep(item));
+  return items.map((item) => omitEmbeddedImages(stripCacheBustDeep(item)));
 }
 
 /**
@@ -882,6 +940,8 @@ export function normalizeReport(
     if (numericUnit) insight.numericUnit = numericUnit;
 
     if (affected.length > 0) insight.metricsAffected = affected;
+    const packs = stackPacksFrom(audit);
+    if (packs) insight.stackPacks = packs;
     const { items, itemsTotal } = itemsFromDetails(details);
     if (items && items.length > 0) insight.items = items;
     if (itemsTotal > 0) insight.itemsTotal = itemsTotal;
@@ -919,6 +979,9 @@ export function normalizeReport(
   };
   const requests = extractRequests(audits, measuredUrl, firstPartyHosts);
   if (requests) normalized.requests = requests;
+  const pageLoad = pageLoadFrom(result);
+  if (pageLoad.runWarnings) normalized.runWarnings = pageLoad.runWarnings;
+  if (pageLoad.runtimeError) normalized.runtimeError = pageLoad.runtimeError;
   return normalized;
 }
 

@@ -50,8 +50,15 @@ export interface Insight {
   savingsSource?: SavingsSource;
   metricsAffected?: string[];
   items?: unknown[];
-  /** Raw `details.items` length before trimming to the top 25. */
+  /** How many rows Lighthouse reported. Equal to `items.length` on reports that kept them all. */
   itemsTotal?: number;
+  /**
+   * Framework-specific notes Lighthouse attached to this audit.
+   *
+   * The icon is left out: it is an embedded image, and the note is the part
+   * an agent can act on. Absent when Lighthouse had nothing to add.
+   */
+  stackPacks?: StackPackNote[];
   /** Items whose resource is served from the measured site's own domain. */
   firstPartyItems: number;
   /** Items whose resource is served from someone else's domain. */
@@ -78,6 +85,13 @@ export interface Insight {
  * *only* place some Lighthouse 13 audits put the number.
  */
 export type SavingsSource = 'overall' | 'metricSavings' | 'items' | 'displayValue' | 'none';
+
+/** One framework note Lighthouse attached to an audit, without its icon. */
+export interface StackPackNote {
+  id: string;
+  title: string;
+  description: string;
+}
 
 /** CrUX field data, passed through untouched when the origin has real users. */
 export interface FieldData {
@@ -212,6 +226,10 @@ export interface NormalizedReport {
   fieldData: FieldData | null;
   /** Absent on runs stored before the request table was kept. */
   requests?: NetworkRequest[];
+  /** Lighthouse `runWarnings`. Omitted when Chrome reported none. */
+  runWarnings?: string[];
+  /** Lighthouse `runtimeError`, as `CODE: message`. Omitted when the page loaded cleanly. */
+  runtimeError?: string;
 }
 
 /** A distribution of one measured value across the successful runs. */
@@ -390,6 +408,10 @@ export interface AggregatedReport {
   fieldData: FieldData | null;
   targets: TargetComparison;
   errors: RunFailure[];
+  /** Union of `runWarnings` across the runs that produced this report. Omitted when none fired. */
+  runWarnings?: string[];
+  /** Union of `runtimeError` across those runs. Omitted when every run loaded cleanly. */
+  runtimeError?: string;
 }
 
 export type SortField = 'savingsMs' | 'savingsBytes' | 'score' | 'firstPartyShare';
