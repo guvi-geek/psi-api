@@ -7,7 +7,6 @@ import { loadTargets } from './targets.js';
 import { loadReport, loadRuns, listReports, getDataDir, saveReport } from './storage.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { compareReports, defaultCompareMetric, type CompareResult } from './compare.js';
-import { failingMetricReadout } from './readout.js';
 import { assessMeasurement, type MeasurementValidity } from './validity.js';
 import { STATS, STRATEGIES, type AggregatedReport, type MetricKey, type SortField, type SortOrder } from './types.js';
 import type { FilterGroup, Gap, ImageFinding, InsightFilters } from './types.js';
@@ -603,16 +602,7 @@ function metricsTable(report: AggregatedReport, useColor: boolean): string[] {
     gap: GAP,
     indent: INDENT,
     styleLabel: (text) => paint('dim', text, useColor),
-    detail: (_row, index) => metricNotes(report, entries[index]?.key, useColor),
   });
-}
-
-/** p75, spread, bimodality and field data for a metric that is over budget. */
-function metricNotes(report: AggregatedReport, metric: MetricKey | undefined, useColor: boolean): string[] {
-  if (!metric || metric === ('score' as MetricKey)) return [];
-  const text = failingMetricReadout(report, metric);
-  if (!text) return [];
-  return wrap(text, termWidth() - INDENT.length - 4, '').map((line) => paint('dim', line, useColor));
 }
 
 /**
@@ -955,7 +945,6 @@ function renderDiagnosis(report: AggregatedReport, options: CliOptions, validity
         gap: GAP,
         indent: INDENT,
         styleLabel: (text) => paint('dim', text, useColor),
-        detail: (_row, index) => metricNotes(report, entries[index]?.key, useColor),
       }),
     );
   }
