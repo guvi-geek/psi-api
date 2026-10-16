@@ -9,7 +9,7 @@ import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { STATS, STRATEGIES, type AggregatedReport, type MetricKey, type SortField, type SortOrder } from './types.js';
 import type { FilterGroup, Gap, ImageFinding, InsightFilters } from './types.js';
 import { imagesOf } from './images.js';
-import { renderInsightRows, renderRequests } from './rows.js';
+import { renderInsightRows, renderNotFound, renderRequests } from './rows.js';
 import { UrlValidationError } from './psiClient.js';
 import {
   ABSENT,
@@ -663,10 +663,22 @@ function insightRow(insight: AggregatedReport['insights'][number], useColor: boo
  * The rows behind named findings, and the request table: the evidence a fix is
  * written from, rather than the summary it is chosen from.
  */
+/** Shown before the score whenever a stored request came back 404. Empty when none did. */
+function notFoundBlock(report: AggregatedReport, useColor: boolean): string[] {
+  return renderNotFound(report.requests, {
+    width: termWidth() - INDENT.length,
+    useColor,
+    url: report.url,
+    finalUrl: report.finalUrl,
+  });
+}
+
 function renderEvidence(report: AggregatedReport, options: CliOptions): string {
   const useColor = colorEnabled();
   const width = termWidth();
   const lines: string[] = ['', ...header(report, useColor)];
+  const missing = notFoundBlock(report, useColor);
+  if (missing.length > 0) lines.push('', ...missing);
 
   for (const id of options.items ?? []) {
     lines.push('');
@@ -758,7 +770,10 @@ function renderHuman(options: CliOptions, report: Awaited<ReturnType<typeof runR
 
   const useColor = colorEnabled();
   const insights = filterInsights(report.insights, filtersFrom(options));
-  const lines: string[] = ['', ...header(report, useColor), ''];
+  const lines: string[] = ['', ...header(report, useColor)];
+  const missing = notFoundBlock(report, useColor);
+  if (missing.length > 0) lines.push('', ...missing);
+  lines.push('');
 
   // Score, with the distribution beside it. A score with no spread next to it
   // reads as a stable property of the page when it is a summary of ten noisy
@@ -858,7 +873,10 @@ function renderDiagnosis(report: AggregatedReport, options: CliOptions): string 
     },
   });
 
-  const lines: string[] = ['', ...header(report, useColor), ''];
+  const lines: string[] = ['', ...header(report, useColor)];
+  const missing = notFoundBlock(report, useColor);
+  if (missing.length > 0) lines.push('', ...missing);
+  lines.push('');
   const scoreTarget = report.targets.targets.score;
   lines.push(
     `${paint('bold', 'SCORE', useColor)}    ${scorePaint(report.headline.score, useColor)} / 100` +

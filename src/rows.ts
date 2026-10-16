@@ -296,6 +296,122 @@ export function renderInsightRows(insight: AggregatedInsight, options: RowViewOp
   return lines;
 }
 
+/* --------------------------------- not found --------------------------------- */
+
+export interface NotFoundViewOptions {
+  width: number;
+  useColor: boolean;
+  /** The URL that was asked for, and where it landed, so a redirect is not filed as a different page. */
+  url?: string;
+  finalUrl?: string;
+}
+
+/** The page without its query, so a cache-busting nonce is not what the reader has to parse. */
+function displayPage(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.origin}${parsed.pathname}`;
+  } catch {
+    return url;
+  }
+}
+
+/** Host and path only. The cache-busting query is not part of which page this is. */
+function pageKey(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.replace(/\/+$/, '') || '/';
+    return `${parsed.host}${path}`;
+  } catch {
+    return undefined;
+  }
+}
+
+function samePage(requestUrl: string, pageUrl: string | undefined): boolean {
+  const requestKey = pageKey(requestUrl);
+  const wanted = pageKey(pageUrl);
+  return requestKey !== undefined && wanted !== undefined && requestKey === wanted;
+}
+
+/**
+ * The document that was actually shown.
+ *
+ * A redirect is two document requests. The last one whose path matches the
+ * measured page is the page the numbers describe; the first one is only the hop.
+ */
+function pageDocument(
+  requests: NetworkRequest[],
+  url: string | undefined,
+  finalUrl: string | undefined,
+): NetworkRequest | undefined {
+  const documents = requests.filter((request) => request.resourceType === 'Document');
+  const matched = documents.filter(
+    (request) => samePage(request.url, finalUrl) || samePage(request.url, url),
+  );
+  if (matched.length > 0) return matched[matched.length - 1];
+  return documents.length === 1 ? documents[0] : undefined;
+}
+
+/**
+ * Plain-language notice when the measured page, or files it asked for, returned 404.
+ *
+ * The status is already stored on each request. Left unsaid, a missing page still
+ * prints a score and a work queue, and an agent will treat the error page as the
+ * page it meant to optimize. Returns nothing when every recorded status is fine,
+ * including reports stored before statuses were kept.
+ */
+export function renderNotFound(
+  requests: NetworkRequest[] | null | undefined,
+  options: NotFoundViewOptions,
+): string[] {
+  if (!requests || requests.length === 0) return [];
+  const missing = requests.filter((request) => request.statusCode === 404);
+  if (missing.length === 0) return [];
+
+  const { useColor, width } = options;
+  const page = pageDocument(requests, options.url, options.finalUrl);
+  const pageMissing = page?.statusCode === 404;
+  const files = missing.filter((request) => request !== page);
+  const lines: string[] = [];
+  const body = Math.max(20, width - INDENT.length);
+
+  if (pageMissing && page) {
+    const where = shortenUrl(displayPage(page.url), body);
+    lines.push(paint('bold', 'NOT FOUND', useColor));
+    for (const line of wrap(
+      `${where} returned 404 Not Found. The numbers below describe that error page, not the page you asked to measure. Do not use this report as a baseline, and do not treat a later change as confirmed by it. Check the URL, confirm the deploy is serving it, then measure again.`,
+      body,
+      '',
+    )) {
+      lines.push(paint('red', `${INDENT}${line}`, useColor));
+    }
+  }
+
+  if (files.length > 0) {
+    if (lines.length > 0) lines.push('');
+    const heading = pageMissing ? 'ALSO MISSING' : 'NOT FOUND';
+    lines.push(paint('bold', heading, useColor));
+    const intro = pageMissing
+      ? `${files.length} other file${files.length === 1 ? '' : 's'} also returned 404 Not Found:`
+      : `${files.length} file${files.length === 1 ? '' : 's'} returned 404 Not Found. The page itself loaded; ${files.length === 1 ? 'this file did' : 'these files did'} not. A missing script or stylesheet is a broken deploy, not a slow page:`;
+    for (const line of wrap(intro, body, '')) {
+      lines.push(paint('yellow', `${INDENT}${line}`, useColor));
+    }
+    const shown = files.slice(0, 8);
+    for (const file of shown) {
+      lines.push(paint('dim', `${INDENT}${INDENT}${shortenUrl(file.url, body - 2)}`, useColor));
+    }
+    if (files.length > shown.length) {
+      lines.push(
+        paint('dim', `${INDENT}${INDENT}${files.length - shown.length} more — see them with --requests`, useColor),
+      );
+    }
+  }
+
+  return lines;
+}
+
 /* --------------------------------- requests --------------------------------- */
 
 export interface RequestViewOptions {
@@ -365,13 +481,15 @@ export function renderRequests(requests: NetworkRequest[] | null | undefined, op
   }
 
   const summary = requestSummary(requests);
+  const notFound = requests.filter((request) => request.statusCode === 404).length;
   const lines = [
     `${paint('bold', 'REQUESTS', useColor)}  ` +
       paint(
         'dim',
         `${summary.count} requests · ${formatBytes(summary.bytes)} transferred · ` +
           `first party ${summary.byParty.first.count} (${formatBytes(summary.byParty.first.bytes)}) · ` +
-          `third party ${summary.byParty.third.count} (${formatBytes(summary.byParty.third.bytes)})`,
+          `third party ${summary.byParty.third.count} (${formatBytes(summary.byParty.third.bytes)})` +
+          (notFound > 0 ? ` · ${notFound} returned 404 Not Found` : ''),
         useColor,
       ),
     paint(
@@ -388,6 +506,13 @@ export function renderRequests(requests: NetworkRequest[] | null | undefined, op
   if (options.limit !== undefined) shown = shown.slice(0, options.limit);
 
   const ms = (value: number | undefined): string => (value === undefined ? ABSENT : `${Math.round(value)}`);
+  const urlOf = (request: NetworkRequest): string => {
+    const text =
+      (request.isLinkPreload ? 'preload ' : '') +
+      request.url.replace(/^https?:\/\//, '') +
+      (request.statusCode === 404 ? ' · not found' : '');
+    return request.statusCode === 404 ? paint('red', text, useColor) : text;
+  };
   lines.push('');
   lines.push(
     ...renderTable(
@@ -399,7 +524,7 @@ export function renderRequests(requests: NetworkRequest[] | null | undefined, op
         request.priority ?? ABSENT,
         formatBytes(request.transferSize),
         request.party === 'first' ? 'first' : paint('yellow', 'third', useColor),
-        (request.isLinkPreload ? 'preload ' : '') + request.url.replace(/^https?:\/\//, ''),
+        urlOf(request),
       ]),
       { width, gap: 2, indent: INDENT, styleLabel: (text) => paint('dim', text, useColor) },
     ),

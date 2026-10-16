@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defaultScreen } from '../src/insights.js';
-import { placement, renderInsightRows, renderRequests, requestSummary } from '../src/rows.js';
+import { placement, renderInsightRows, renderNotFound, renderRequests, requestSummary } from '../src/rows.js';
 import type { AggregatedInsight, NetworkRequest } from '../src/types.js';
 
 const SCREEN = defaultScreen('mobile');
@@ -203,5 +203,96 @@ describe('request table', () => {
 
   it('explains a report stored without a request table', () => {
     expect(text(renderRequests(undefined, { width: 100, useColor: false }))).toMatch(/stored before requests were kept/);
+  });
+
+  it('names a 404 in words on that row only', () => {
+    const withMissing: NetworkRequest[] = [
+      ...requests,
+      {
+        url: 'https://site.test/build/q-missing.js',
+        resourceType: 'Script',
+        priority: 'High',
+        startMs: 980,
+        endMs: 1000,
+        transferSize: 0,
+        statusCode: 404,
+        party: 'first',
+      },
+    ];
+    const out = text(renderRequests(withMissing, { width: 160, useColor: false }));
+    expect(out).toContain('1 returned 404 Not Found');
+    expect(out).toContain('site.test/build/q-missing.js · not found');
+    expect(out).not.toContain('style.css · not found');
+  });
+});
+
+describe('404 pages', () => {
+  const page = (status: number, url = 'https://site.test/missing'): NetworkRequest => ({
+    url,
+    resourceType: 'Document',
+    priority: 'VeryHigh',
+    startMs: 0,
+    endMs: 400,
+    transferSize: 1200,
+    statusCode: status,
+    party: 'first',
+  });
+
+  it('says nothing when the page and its files loaded', () => {
+    expect(renderNotFound([page(200, 'https://site.test/')], { width: 80, useColor: false, url: 'https://site.test/' })).toEqual([]);
+    expect(renderNotFound(undefined, { width: 80, useColor: false })).toEqual([]);
+  });
+
+  it('says the scores belong to the error page when the document is missing', () => {
+    const out = text(
+      renderNotFound([page(404, 'https://site.test/missing?psi_nonce=1')], {
+        width: 72,
+        useColor: false,
+        url: 'https://site.test/missing?psi_nonce=1',
+        finalUrl: 'https://site.test/missing',
+      }),
+    );
+    expect(out).toContain('NOT FOUND');
+    expect(out).toContain('returned 404 Not Found');
+    expect(out).toContain('error page');
+    expect(out).toContain('use this report as a baseline');
+    expect(out).not.toContain('psi_nonce');
+  });
+
+  it('lists missing files without calling the page itself missing', () => {
+    const out = text(
+      renderNotFound(
+        [
+          page(200, 'https://site.test/'),
+          {
+            url: 'https://site.test/build/q-old.js',
+            resourceType: 'Script',
+            statusCode: 404,
+            party: 'first',
+          },
+        ],
+        { width: 80, useColor: false, url: 'https://site.test/', finalUrl: 'https://site.test/' },
+      ),
+    );
+    expect(out).toContain('NOT FOUND');
+    expect(out).toContain('The page itself loaded');
+    expect(out).toContain('broken deploy');
+    expect(out).toContain('site.test/build/q-old.js');
+    expect(out).not.toContain('error page');
+  });
+
+  it('keeps the page notice and the other missing files apart', () => {
+    const out = text(
+      renderNotFound(
+        [
+          page(404),
+          { url: 'https://site.test/build/q-old.js', resourceType: 'Script', statusCode: 404, party: 'first' },
+        ],
+        { width: 80, useColor: false, url: 'https://site.test/missing' },
+      ),
+    );
+    expect(out).toContain('error page');
+    expect(out).toContain('ALSO MISSING');
+    expect(out).toContain('1 other file also returned 404 Not Found');
   });
 });
