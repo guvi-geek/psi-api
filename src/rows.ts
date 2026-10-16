@@ -340,7 +340,7 @@ function samePage(requestUrl: string, pageUrl: string | undefined): boolean {
  * A redirect is two document requests. The last one whose path matches the
  * measured page is the page the numbers describe; the first one is only the hop.
  */
-function pageDocument(
+export function pageDocument(
   requests: NetworkRequest[],
   url: string | undefined,
   finalUrl: string | undefined,

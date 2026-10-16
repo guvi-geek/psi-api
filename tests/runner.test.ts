@@ -255,3 +255,74 @@ describe('cached-run detection', () => {
     expect(requested.every((u) => u.startsWith('https://example.com/?psi_nonce='))).toBe(true);
   });
 });
+
+describe('early stop', () => {
+  function documentFetch(status: number) {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as {
+        lighthouseResult: { audits: Record<string, unknown> };
+      };
+      raw.lighthouseResult.audits['network-requests'] = {
+        details: {
+          type: 'table',
+          items: [
+            {
+              url: 'https://example.com/',
+              resourceType: 'Document',
+              statusCode: status,
+              transferSize: 1000,
+            },
+          ],
+        },
+      };
+      return fakeResponse(raw);
+    }) as unknown as typeof fetch;
+    return { impl, get calls() { return calls; } };
+  }
+
+  it('does not send the rest of the batch when the page is 404', async () => {
+    const fetch = documentFetch(404);
+    const result = await runReport({
+      url: 'https://example.com/',
+      runs: 6,
+      save: false,
+      fetchImpl: fetch.impl,
+      sleepImpl: noSleep,
+      targets,
+    });
+    expect(fetch.calls).toBe(1);
+    expect(result.report.runsSucceeded).toBe(1);
+    expect(result.warnings.join(' ')).toMatch(/404/);
+    expect(result.warnings.join(' ')).toMatch(/not sent/);
+  });
+
+  it('still measures every run when the document loads', async () => {
+    const fetch = documentFetch(200);
+    await runReport({
+      url: 'https://example.com/',
+      runs: 3,
+      save: false,
+      fetchImpl: fetch.impl,
+      sleepImpl: noSleep,
+      targets,
+    });
+    expect(fetch.calls).toBe(3);
+  });
+
+  it('stops after one unreachable fetch instead of repeating it', async () => {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      return fakeResponse(
+        { error: { code: 400, message: 'FAILED_DOCUMENT_REQUEST: the host refused the connection' } },
+        { status: 400 },
+      );
+    }) as unknown as typeof fetch;
+    await expect(
+      runReport({ url: 'https://example.com/', runs: 5, save: false, fetchImpl: impl, sleepImpl: noSleep, targets }),
+    ).rejects.toBeInstanceOf(InsufficientRunsError);
+    expect(calls).toBe(1);
+  });
+});

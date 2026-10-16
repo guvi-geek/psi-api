@@ -51,6 +51,7 @@ describe('priority order', () => {
     const result = diagnose(PASSING);
     expect(result.priorityOrder).toEqual([]);
     expect(result.primary).toBeUndefined();
+    expect(result.evidence?.insightId).toBe(result.ranked[0]?.insight.id);
   });
 
   it('excludes passing metrics from the queue', () => {

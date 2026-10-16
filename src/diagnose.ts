@@ -153,6 +153,19 @@ export interface Diagnosis {
   cautions: string[];
   /** True when nothing actionable is left, so the loop should stop. */
   exhausted: boolean;
+  /**
+   * The top ranked insight's rows, plus strings worth grepping for in the repo.
+   *
+   * Null when the queue is empty. The rows are the same list already on the
+   * insight; they are repeated here so a caller does not have to know that.
+   */
+  evidence: DiagnosisEvidence | null;
+}
+
+export interface DiagnosisEvidence {
+  insightId: string;
+  items: unknown[];
+  grep: string[];
 }
 
 const fmt = (metric: string): string => METRIC_LABELS[metric] ?? metric.toUpperCase();
@@ -536,5 +549,60 @@ export function diagnose(
     unreliable,
     cautions: cautionsFor(report, ranked),
     exhausted,
+    evidence: evidenceFor(ranked[0]),
   };
+}
+
+const GREP_LIMIT = 8;
+
+/** Class names, ids and file names a fix can be searched for. Selectors and URLs only. */
+export function grepSeeds(items: unknown): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const seenObjects = new WeakSet<object>();
+  const add = (token: string | undefined) => {
+    const text = token?.trim();
+    if (!text || text.length < 3 || text.length > 80 || seen.has(text)) return;
+    seen.add(text);
+    found.push(text);
+  };
+  const walk = (value: unknown): void => {
+    if (!value || typeof value !== 'object' || found.length >= GREP_LIMIT) return;
+    if (seenObjects.has(value)) return;
+    seenObjects.add(value);
+    if (Array.isArray(value)) {
+      for (const entry of value) walk(entry);
+      return;
+    }
+    const row = value as Record<string, unknown>;
+    if (typeof row.selector === 'string') {
+      for (const match of row.selector.matchAll(/[.#]([A-Za-z_][\w-]{2,})/g)) {
+        if (match[1]) add(match[1]);
+      }
+    }
+    if (typeof row.snippet === 'string') {
+      for (const match of row.snippet.matchAll(/class="([^"]+)"/g)) {
+        for (const cls of (match[1] ?? '').split(/\s+/)) add(cls);
+      }
+    }
+    if (typeof row.url === 'string' && !row.url.startsWith('data:')) {
+      try {
+        const file = new URL(row.url).pathname.split('/').filter(Boolean).pop();
+        add(file);
+      } catch {
+        /* not a URL */
+      }
+    }
+    for (const nested of Object.values(row)) {
+      if (nested && typeof nested === 'object') walk(nested);
+    }
+  };
+  walk(items);
+  return found;
+}
+
+function evidenceFor(entry: RankedInsight | undefined): DiagnosisEvidence | null {
+  if (!entry) return null;
+  const items = entry.insight.items ?? [];
+  return { insightId: entry.insight.id, items, grep: grepSeeds(items) };
 }

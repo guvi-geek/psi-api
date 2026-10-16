@@ -8,6 +8,7 @@ import type {
 import { aggregateReports, MIN_SUCCESS_RATIO } from './aggregate.js';
 import { normalizeReport } from './insights.js';
 import { PsiError, runPsiCall, validateTargetUrl, type RetryInfo } from './psiClient.js';
+import { isPageNotFound, isUnreachableMessage } from './validity.js';
 import { applyTargets, loadTargets, type Targets } from './targets.js';
 import { makeReportId, saveReport } from './storage.js';
 
@@ -91,41 +92,53 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   const reports: Array<{ runNumber: number; report: NormalizedReport }> = [];
   const failures: RunFailure[] = [];
 
-  let nextIndex = 0;
-  const workerCount = Math.max(1, Math.min(concurrency, runCount));
-
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = nextIndex;
-      nextIndex += 1;
-      if (index >= runCount) return;
-
-      const runNumber = index + 1;
-
-      try {
-        const result = await runPsiCall({
-          url: validatedUrl,
-          strategy,
-          categories,
-          apiKey,
-          fetchImpl: options.fetchImpl,
-          sleepImpl: options.sleepImpl,
-          randomImpl: options.randomImpl,
-          onRetry,
-          signal,
-        });
-        const normalized = normalizeReport(result.raw, validatedUrl, strategy);
-        reports.push({ runNumber, report: normalized });
-        onRunFinished?.({ run: runNumber, ok: true, score: normalized.score });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        failures.push({ run: runNumber, message });
-        onRunFinished?.({ run: runNumber, ok: false, error: message });
-      }
+  const runOne = async (runNumber: number): Promise<void> => {
+    try {
+      const result = await runPsiCall({
+        url: validatedUrl,
+        strategy,
+        categories,
+        apiKey,
+        fetchImpl: options.fetchImpl,
+        sleepImpl: options.sleepImpl,
+        randomImpl: options.randomImpl,
+        onRetry,
+        signal,
+      });
+      const normalized = normalizeReport(result.raw, validatedUrl, strategy);
+      reports.push({ runNumber, report: normalized });
+      onRunFinished?.({ run: runNumber, ok: true, score: normalized.score });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push({ run: runNumber, message });
+      onRunFinished?.({ run: runNumber, ok: false, error: message });
     }
   };
 
-  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  // The first call goes out alone. A 404 or a host PSI cannot reach would
+  // otherwise burn the rest of the batch, and those failures do not change on
+  // the next call. When the first call is a real page, the remainder still
+  // goes out together at the same concurrency as before.
+  await runOne(1);
+  const first = reports.find((entry) => entry.runNumber === 1)?.report;
+  const firstFailure = failures.find((entry) => entry.run === 1)?.message;
+  const stoppedEarly =
+    (first ? isPageNotFound(first) : false) ||
+    (firstFailure !== undefined && reports.length === 0 && isUnreachableMessage(firstFailure));
+
+  if (!stoppedEarly && runCount > 1) {
+    let nextIndex = 1;
+    const workerCount = Math.max(1, Math.min(concurrency, runCount - 1));
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const index = nextIndex;
+        nextIndex += 1;
+        if (index >= runCount) return;
+        await runOne(index + 1);
+      }
+    };
+    await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  }
 
   // Deterministic ordering regardless of which worker finished first.
   reports.sort((a, b) => a.runNumber - b.runNumber);
@@ -135,7 +148,9 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   if (reports.length === 0) {
     throw new InsufficientRunsError(0, runCount, failures);
   }
-  if (reports.length < Math.ceil(runCount * MIN_SUCCESS_RATIO)) {
+  // A 404 page is still a report — the caller has to see that it measured the
+  // error page. Every other shortfall keeps the 60% rule.
+  if (!stoppedEarly && reports.length < Math.ceil(runCount * MIN_SUCCESS_RATIO)) {
     throw new InsufficientRunsError(reports.length, runCount, failures);
   }
 
@@ -151,6 +166,10 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   // PSI caches per-URL, so N runs of one URL can collapse into a single cached
   // report repeated N times. The median would then be one sample wearing 10 hats.
   const runWarnings = [...warnings];
+  if (stoppedEarly) {
+    const why = first ? 'the page returned 404 Not Found' : (firstFailure ?? 'the host could not be fetched');
+    runWarnings.push(`Stopped after the first run: ${why}. The remaining PSI calls were not sent.`);
+  }
   if (ordered.length > 1) {
     const stamps = new Set(ordered.map((report) => report.fetchTime));
     if (stamps.size === 1) {

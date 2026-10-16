@@ -14,7 +14,8 @@ import { diagnose } from './diagnose.js';
 import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
 import { UrlValidationError } from './psiClient.js';
-import { loadReport } from './storage.js';
+import { loadReport, loadRuns } from './storage.js';
+import { assessMeasurement } from './validity.js';
 
 loadEnv();
 
@@ -349,6 +350,7 @@ export function buildServer(): FastifyInstance {
           .status(404)
           .send({ error: { code: 'NOT_FOUND', message: `no stored report "${req.params.reportId}"` } });
       }
+      const runs = await loadRuns(req.params.reportId);
       return reply.send({
         reportId: report.reportId,
         url: report.url,
@@ -358,6 +360,7 @@ export function buildServer(): FastifyInstance {
         lcp: report.lcp,
         distributions: report.distributions,
         images: imagesOf(report),
+        validity: assessMeasurement({ report, runs }),
         ...diagnosisPayload(report, filterParams.parse(compact(req.query))),
       });
     },

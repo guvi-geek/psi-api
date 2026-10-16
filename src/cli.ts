@@ -6,6 +6,9 @@ import { diagnose as diagnoseReport, METRIC_LABELS } from './diagnose.js';
 import { loadTargets } from './targets.js';
 import { loadReport, loadRuns, listReports, getDataDir, saveReport } from './storage.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
+import { compareReports, defaultCompareMetric, type CompareResult } from './compare.js';
+import { failingMetricReadout } from './readout.js';
+import { assessMeasurement, type MeasurementValidity } from './validity.js';
 import { STATS, STRATEGIES, type AggregatedReport, type MetricKey, type SortField, type SortOrder } from './types.js';
 import type { FilterGroup, Gap, ImageFinding, InsightFilters } from './types.js';
 import { imagesOf } from './images.js';
@@ -81,6 +84,10 @@ interface CliOptions {
   items?: string[];
   /** Print the median run's request table, in this order. */
   requests?: 'start' | 'size';
+  /** List stored reports. Costs no PSI quota. */
+  list: boolean;
+  /** Judge a later report against an earlier one. */
+  compare?: [string, string];
 }
 
 const USAGE = `
@@ -128,6 +135,11 @@ Options:
                            today's aggregation and target rules. Costs no PSI
                            quota. Combine with --reportId for one report, or
                            omit it to sweep every stored report on disk.
+  --list                  List stored reports, newest first. Costs no PSI quota
+  --compare <before> <after>
+                          KEEP, REVERT or INCONCLUSIVE for --metric (default:
+                          the baseline's worst failing metric), plus the request
+                          diff. Costs no PSI quota
   --json                  Machine-readable JSON
   --no-save               Do not write the report to data/
   -h, --help              This message
@@ -138,6 +150,8 @@ Examples:
   npm run psi -- --reportId 2026-09-29T10-30-00Z-mobile --metric lcp
   npm run psi -- --reportId 2026-09-29T10-30-00Z-mobile --items image-delivery-insight
   npm run psi -- --reportId 2026-09-29T10-30-00Z-mobile --requests size --limit 20
+  npm run psi -- --list
+  npm run psi -- --compare <beforeId> <afterId> --metric lcp
 
 Output:
   The default view leads with a verdict, then a metric table where every row
@@ -224,6 +238,8 @@ export function parseArgs(argv: string[]): CliOptions | null {
   let includeFlaky = true;
   let json = false;
   let noSave = false;
+  let list = false;
+  let compare: [string, string] | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
@@ -337,6 +353,17 @@ export function parseArgs(argv: string[]): CliOptions | null {
       case '--reanalyze':
         reanalyzeFlag = true;
         break;
+      case '--list':
+        list = true;
+        break;
+      case '--compare': {
+        const beforeId = takeValue(argv, i, arg);
+        const afterId = argv[i + 2];
+        if (afterId === undefined || afterId.startsWith('--')) fail('--compare requires two report ids');
+        compare = [beforeId, afterId];
+        i += 2;
+        break;
+      }
       case '--hasItems':
         hasItems = true;
         break;
@@ -383,7 +410,9 @@ export function parseArgs(argv: string[]): CliOptions | null {
   const url = positional[0];
   // A re-analysis reads reports from disk, so it needs neither a url nor an id:
   // with no `--reportId` it sweeps everything stored.
-  if (!url && !reportId && !reanalyzeFlag) fail(`a url or --reportId is required\n${USAGE}`);
+  if (!url && !reportId && !reanalyzeFlag && !list && !compare) {
+    fail(`a url or --reportId is required\n${USAGE}`);
+  }
   if (url && positional.length > 1) fail(`unexpected argument "${positional[1]}"`);
   if (runs < 1 || runs > MAX_RUNS) fail(`--runs must be between 1 and ${MAX_RUNS}`);
 
@@ -413,6 +442,8 @@ export function parseArgs(argv: string[]): CliOptions | null {
     reanalyze: reanalyzeFlag,
     items,
     requests,
+    list,
+    compare,
   };
 }
 
@@ -572,7 +603,16 @@ function metricsTable(report: AggregatedReport, useColor: boolean): string[] {
     gap: GAP,
     indent: INDENT,
     styleLabel: (text) => paint('dim', text, useColor),
+    detail: (_row, index) => metricNotes(report, entries[index]?.key, useColor),
   });
+}
+
+/** p75, spread, bimodality and field data for a metric that is over budget. */
+function metricNotes(report: AggregatedReport, metric: MetricKey | undefined, useColor: boolean): string[] {
+  if (!metric || metric === ('score' as MetricKey)) return [];
+  const text = failingMetricReadout(report, metric);
+  if (!text) return [];
+  return wrap(text, termWidth() - INDENT.length - 4, '').map((line) => paint('dim', line, useColor));
 }
 
 /**
@@ -673,12 +713,29 @@ function notFoundBlock(report: AggregatedReport, useColor: boolean): string[] {
   });
 }
 
-function renderEvidence(report: AggregatedReport, options: CliOptions): string {
-  const useColor = colorEnabled();
-  const width = termWidth();
-  const lines: string[] = ['', ...header(report, useColor)];
+function validityBlock(validity: MeasurementValidity, useColor: boolean): string[] {
+  if (validity.usable) return [];
+  const lines = [paint('bold', 'DO NOT USE', useColor)];
+  const width = termWidth() - INDENT.length;
+  for (const reason of validity.reasons) {
+    for (const line of wrap(reason, width, '')) lines.push(paint('yellow', `${INDENT}${line}`, useColor));
+  }
+  return lines;
+}
+
+function openReport(report: AggregatedReport, validity: MeasurementValidity, useColor: boolean): string[] {
+  const lines = ['', ...header(report, useColor)];
+  const gate = validityBlock(validity, useColor);
+  if (gate.length > 0) lines.push('', ...gate);
   const missing = notFoundBlock(report, useColor);
   if (missing.length > 0) lines.push('', ...missing);
+  return lines;
+}
+
+function renderEvidence(report: AggregatedReport, options: CliOptions, validity: MeasurementValidity): string {
+  const useColor = colorEnabled();
+  const width = termWidth();
+  const lines: string[] = openReport(report, validity, useColor);
 
   for (const id of options.items ?? []) {
     lines.push('');
@@ -764,16 +821,17 @@ function imageSection(report: AggregatedReport, useColor: boolean): string[] {
   return lines;
 }
 
-function renderHuman(options: CliOptions, report: Awaited<ReturnType<typeof runReport>>['report']): string {
-  if (options.items || options.requests) return renderEvidence(report, options);
-  if (options.diagnose) return renderDiagnosis(report, options);
+function renderHuman(
+  options: CliOptions,
+  report: Awaited<ReturnType<typeof runReport>>['report'],
+  validity: MeasurementValidity,
+): string {
+  if (options.items || options.requests) return renderEvidence(report, options, validity);
+  if (options.diagnose) return renderDiagnosis(report, options, validity);
 
   const useColor = colorEnabled();
   const insights = filterInsights(report.insights, filtersFrom(options));
-  const lines: string[] = ['', ...header(report, useColor)];
-  const missing = notFoundBlock(report, useColor);
-  if (missing.length > 0) lines.push('', ...missing);
-  lines.push('');
+  const lines: string[] = [...openReport(report, validity, useColor), ''];
 
   // Score, with the distribution beside it. A score with no spread next to it
   // reads as a stable property of the page when it is a summary of ten noisy
@@ -859,7 +917,7 @@ function renderHuman(options: CliOptions, report: Awaited<ReturnType<typeof runR
  * but not "what should I work on". Ranking by raw savings optimises whatever is
  * biggest; ranking against the metrics that actually fail optimises the page.
  */
-function renderDiagnosis(report: AggregatedReport, options: CliOptions): string {
+function renderDiagnosis(report: AggregatedReport, options: CliOptions, validity: MeasurementValidity): string {
   const useColor = colorEnabled();
   const diagnosis = diagnoseReport(report, {
     filters: {
@@ -873,10 +931,7 @@ function renderDiagnosis(report: AggregatedReport, options: CliOptions): string 
     },
   });
 
-  const lines: string[] = ['', ...header(report, useColor)];
-  const missing = notFoundBlock(report, useColor);
-  if (missing.length > 0) lines.push('', ...missing);
-  lines.push('');
+  const lines: string[] = [...openReport(report, validity, useColor), ''];
   const scoreTarget = report.targets.targets.score;
   lines.push(
     `${paint('bold', 'SCORE', useColor)}    ${scorePaint(report.headline.score, useColor)} / 100` +
@@ -900,6 +955,7 @@ function renderDiagnosis(report: AggregatedReport, options: CliOptions): string 
         gap: GAP,
         indent: INDENT,
         styleLabel: (text) => paint('dim', text, useColor),
+        detail: (_row, index) => metricNotes(report, entries[index]?.key, useColor),
       }),
     );
   }
@@ -1010,6 +1066,10 @@ function renderDiagnosis(report: AggregatedReport, options: CliOptions): string 
         },
       ),
     );
+    const seeds = diagnosis.evidence?.grep ?? [];
+    if (seeds.length > 0) {
+      lines.push(paint('dim', `${INDENT}grep  ${seeds.join('  ')}`, useColor));
+    }
   }
 
   if (diagnosis.cautions.length > 0) {
@@ -1195,6 +1255,108 @@ async function runReanalyze(options: CliOptions): Promise<number> {
   return rows.some((row) => row.error) ? 1 : 0;
 }
 
+async function runList(options: CliOptions): Promise<number> {
+  const refs = await listReports();
+  const rows: Array<{
+    reportId: string;
+    url: string;
+    strategy: string;
+    score: number;
+    lcp: number | null;
+    generatedAt: string;
+  }> = [];
+  for (const ref of refs) {
+    const report = await loadReport(ref.reportId);
+    if (!report) continue;
+    rows.push({
+      reportId: report.reportId,
+      url: report.url,
+      strategy: report.strategy,
+      score: report.headline.score,
+      lcp: report.headline.metrics.lcp ?? null,
+      generatedAt: report.generatedAt,
+    });
+  }
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({ reports: rows }, null, 2)}\n`);
+    return 0;
+  }
+  const useColor = colorEnabled();
+  const lines = [
+    '',
+    `${paint('bold', 'REPORTS', useColor)}  ${paint('dim', `${rows.length} stored, newest first`, useColor)}`,
+  ];
+  if (rows.length === 0) lines.push(paint('dim', `${INDENT}no stored reports`, useColor));
+  for (const row of rows) {
+    const lcp = row.lcp === null ? '' : `  lcp ${Math.round(row.lcp)}ms`;
+    lines.push(`  ${row.reportId}  ${row.strategy}  score ${row.score}${lcp}  ${row.url}`);
+  }
+  lines.push('');
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return 0;
+}
+
+function renderCompare(before: AggregatedReport, after: AggregatedReport, result: CompareResult): string {
+  const useColor = colorEnabled();
+  const tone = result.verdict === 'KEEP' ? 'green' : result.verdict === 'REVERT' ? 'red' : 'yellow';
+  const side = (report: AggregatedReport, label: string, stats: CompareResult['before']) => {
+    const rate = stats.passRate === undefined ? '' : `  pass ${Math.round(stats.passRate * 100)}%`;
+    return paint(
+      'dim',
+      `  ${label.padEnd(6)} ${report.reportId}  p75 ${metricValue(result.metric, stats.p75)}  stddev ${metricValue(result.metric, stats.stddev)}${rate}`,
+      useColor,
+    );
+  };
+  const lines = [
+    '',
+    `${paint('bold', 'COMPARE', useColor)}  ${result.metric}`,
+    side(before, 'before', result.before),
+    side(after, 'after', result.after),
+    '',
+    `${paint('bold', 'VERDICT', useColor)}  ${paint(tone, result.verdict, useColor)}`,
+    ...wrap(result.reason, termWidth() - INDENT.length, '').map((line) => paint('dim', `${INDENT}${line}`, useColor)),
+    '',
+    paint('bold', 'REQUESTS', useColor),
+  ];
+  const diff = result.requests;
+  if (!diff.available) {
+    lines.push(paint('dim', `${INDENT}one of these reports was stored before requests were kept`, useColor));
+  } else {
+    const beforeBytes = diff.documentBytesBefore === null ? ABSENT : formatBytes(diff.documentBytesBefore);
+    const afterBytes = diff.documentBytesAfter === null ? ABSENT : formatBytes(diff.documentBytesAfter);
+    lines.push(paint('dim', `${INDENT}document ${beforeBytes} → ${afterBytes}`, useColor));
+    lines.push(paint('dim', `${INDENT}404s resolved: ${diff.notFoundResolved.join(', ') || 'none'}`, useColor));
+    lines.push(paint('dim', `${INDENT}404s introduced: ${diff.notFoundIntroduced.join(', ') || 'none'}`, useColor));
+    lines.push(paint('dim', `${INDENT}third parties arrived: ${diff.thirdPartyArrived.join(', ') || 'none'}`, useColor));
+    lines.push(paint('dim', `${INDENT}third parties left: ${diff.thirdPartyLeft.join(', ') || 'none'}`, useColor));
+  }
+  for (const caution of result.cautions) {
+    lines.push('');
+    for (const line of wrap(caution, termWidth() - INDENT.length, '')) {
+      lines.push(paint('yellow', `${INDENT}${line}`, useColor));
+    }
+  }
+  lines.push('');
+  return lines.join('\n');
+}
+
+async function runCompare(options: CliOptions): Promise<number> {
+  const [beforeId, afterId] = options.compare ?? [];
+  if (!beforeId || !afterId) fail('--compare requires two report ids');
+  const before = await loadReport(beforeId);
+  const after = await loadReport(afterId);
+  if (!before) fail(`no stored report "${beforeId}"`);
+  if (!after) fail(`no stored report "${afterId}"`);
+  const metric = options.metric?.[0] ?? defaultCompareMetric(before);
+  const result = compareReports(before, after, metric);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write(`${renderCompare(before, after, result)}\n`);
+  return 0;
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   const options = parseArgs(argv);
   if (!options) {
@@ -1203,14 +1365,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
 
   try {
+    if (options.list) return await runList(options);
+    if (options.compare) return await runCompare(options);
     if (options.reanalyze) return await runReanalyze(options);
 
     // Re-filtering a stored report costs no quota, so it short-circuits the run.
     const warnings: string[] = [];
     let report: AggregatedReport;
+    let runs: Awaited<ReturnType<typeof loadRuns>> = null;
 
     if (options.reportId) {
       report = await loadStoredReport(options.reportId);
+      runs = await loadRuns(options.reportId);
     } else {
       const result = await runReport({
         url: options.url,
@@ -1237,8 +1403,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         },
       });
       report = result.report;
+      runs = result.runs;
       warnings.push(...result.warnings);
     }
+
+    const validity = assessMeasurement({ report, runs, warnings });
 
     for (const warning of warnings) {
       process.stderr.write(`${paint('yellow', 'warning', false)}: ${warning}\n`);
@@ -1261,6 +1430,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
             ...report,
             images: imagesOf(report),
             matchedInsights: insights,
+            validity,
             ...(diagnosis ? { diagnosis } : {}),
             warnings,
           },
@@ -1269,7 +1439,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         )}\n`,
       );
     } else {
-      process.stdout.write(`${renderHuman(options, report)}\n`);
+      process.stdout.write(`${renderHuman(options, report, validity)}\n`);
     }
 
     return 0;
