@@ -34,6 +34,7 @@ import {
   spreadLine,
   termWidth,
   truncate,
+  visibleLength,
   wrap,
   type Column,
 } from './render.js';
@@ -194,6 +195,98 @@ end up in your stdout.
 function fail(message: string): never {
   process.stderr.write(`error: ${message}\n`);
   process.exit(1);
+}
+
+export type RunSlot =
+  | { kind: 'pending' }
+  | { kind: 'cached' }
+  | { kind: 'score'; score: number }
+  | { kind: 'fail' };
+
+/** Right-align the run number, then a 4-wide status, so the two columns line up. */
+function runCell(run: number, total: number, slot: RunSlot, useColor: boolean): string {
+  const id = String(run).padStart(String(total).length, ' ');
+  const body =
+    slot.kind === 'pending'
+      ? paint('dim', '·', useColor)
+      : slot.kind === 'cached'
+        ? paint('yellow', '…', useColor)
+        : slot.kind === 'fail'
+          ? paint('yellow', 'FAIL', useColor)
+          : String(Math.round(slot.score));
+  const pad = 4 - visibleLength(body);
+  return `${id}  ${body}${' '.repeat(pad > 0 ? pad : 0)}`;
+}
+
+/**
+ * Runs in number order, split into two columns. Ten runs are five and five.
+ * Any other count puts the first half on the left.
+ */
+export function renderRunGrid(slots: RunSlot[], useColor = false): string {
+  const total = slots.length;
+  const leftCount = Math.ceil(total / 2);
+  const lines: string[] = [];
+  for (let row = 0; row < leftCount; row += 1) {
+    const left = runCell(row + 1, total, slots[row] ?? { kind: 'pending' }, useColor);
+    const rightIndex = row + leftCount;
+    if (rightIndex >= total) {
+      lines.push(left.trimEnd());
+      continue;
+    }
+    const right = runCell(rightIndex + 1, total, slots[rightIndex] ?? { kind: 'pending' }, useColor);
+    lines.push(`${left}   ${right}`.trimEnd());
+  }
+  return lines.join('\n');
+}
+
+/** Live two-column progress on a terminal. A pipe gets one line per finish. */
+class RunProgress {
+  private readonly slots: RunSlot[];
+  private drawn = 0;
+  readonly live: boolean;
+  private readonly useColor: boolean;
+
+  constructor(total: number) {
+    this.slots = Array.from({ length: total }, () => ({ kind: 'pending' as const }));
+    this.live = process.stderr.isTTY === true;
+    this.useColor = colorEnabled();
+  }
+
+  show(): void {
+    if (!this.live) return;
+    const lines = renderRunGrid(this.slots, this.useColor).split('\n');
+    if (this.drawn > 0) process.stderr.write(`\x1b[${this.drawn}A`);
+    for (const line of lines) process.stderr.write(`\x1b[2K${line}\n`);
+    this.drawn = lines.length;
+  }
+
+  note(info: { run: number; ok: boolean; score?: number; error?: string; cached?: boolean }): void {
+    const slot: RunSlot = info.cached
+      ? { kind: 'cached' }
+      : info.ok
+        ? { kind: 'score', score: info.score ?? 0 }
+        : { kind: 'fail' };
+    this.slots[info.run - 1] = slot;
+    if (this.live) {
+      this.show();
+      return;
+    }
+    const total = this.slots.length;
+    const label = info.cached
+      ? `run ${info.run}/${total}  cached, retrying`
+      : info.ok
+        ? `run ${info.run}/${total}  score ${Math.round(info.score ?? 0)}`
+        : `run ${info.run}/${total}  FAILED  ${info.error ?? ''}`;
+    process.stderr.write(`${info.ok ? label : paint('yellow', label, false)}\n`);
+  }
+}
+
+function writeMeasureTitle(options: CliOptions): void {
+  const useColor = colorEnabled();
+  const runs = `${options.runs} run${options.runs === 1 ? '' : 's'}`;
+  const page = shortenUrl(options.url, Math.max(24, termWidth() - options.strategy.length - runs.length - 6));
+  process.stderr.write(`${paint('bold', 'PSI - API', useColor)}\n`);
+  process.stderr.write(`${paint('dim', `${options.strategy} · ${runs} · ${page}`, useColor)}\n\n`);
 }
 
 function takeValue(argv: string[], index: number, flag: string): string {
@@ -1394,6 +1487,11 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       report = await loadStoredReport(options.reportId);
       runs = await loadRuns(options.reportId);
     } else {
+      const progress = options.json ? null : new RunProgress(options.runs);
+      if (progress) {
+        writeMeasureTitle(options);
+        progress.show();
+      }
       const result = await runReport({
         url: options.url,
         strategy: options.strategy,
@@ -1402,22 +1500,12 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
         save: !options.noSave,
         targets: loadTargets(),
         onRetry: ({ reason, delayMs }) => {
-          if (options.json) return;
+          // A live grid is redrawn in place. An extra line would shift it.
+          if (options.json || progress?.live) return;
           process.stderr.write(`${paint('yellow', 'retry', false)}: ${reason} (${delayMs}ms)\n`);
         },
-        onRunFinished: ({ run, ok, score, error, cached }) => {
-          if (options.json) return;
-          // One line per run, appended and never rewritten. A carriage return
-          // would leave a single line that overwrites itself, which hides the
-          // per-run spread the reader needs in order to judge the aggregate
-          // that follows - and a report whose runs cannot be seen individually
-          // cannot be checked for the cached-timestamp failure mode.
-          const label = cached
-            ? `run ${run}/${options.runs}  cached, retrying`
-            : ok
-              ? `run ${run}/${options.runs}  score ${Math.round(score as number)}`
-              : `run ${run}/${options.runs}  FAILED  ${error}`;
-          process.stderr.write(`${ok ? label : paint('yellow', label, false)}\n`);
+        onRunFinished: (info) => {
+          progress?.note(info);
         },
       });
       report = result.report;

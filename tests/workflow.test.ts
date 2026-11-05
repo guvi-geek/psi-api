@@ -3,7 +3,7 @@ import { compareReports, defaultCompareMetric } from '../src/compare.js';
 import { grepSeeds } from '../src/diagnose.js';
 import { failingMetricReadout, fieldP75 } from '../src/readout.js';
 import { assessMeasurement } from '../src/validity.js';
-import { parseArgs } from '../src/cli.js';
+import { parseArgs, renderRunGrid, type RunSlot } from '../src/cli.js';
 import type { AggregatedReport, MetricKey, NetworkRequest, NormalizedReport, SeriesStats } from '../src/types.js';
 
 function series(p75: number, stddev = 100): SeriesStats {
@@ -268,6 +268,37 @@ describe('cli flags', () => {
       strategy: 'desktop',
       runs: 10,
     });
+  });
+
+  it('lays ten runs out as two columns of five', () => {
+    const slots: RunSlot[] = [
+      { kind: 'score', score: 85 },
+      { kind: 'score', score: 86 },
+      { kind: 'score', score: 91 },
+      { kind: 'score', score: 87 },
+      { kind: 'score', score: 85 },
+      { kind: 'score', score: 86 },
+      { kind: 'score', score: 89 },
+      { kind: 'pending' },
+      { kind: 'cached' },
+      { kind: 'fail' },
+    ];
+    expect(renderRunGrid(slots).split('\n')).toEqual([
+      ' 1  85      6  86',
+      ' 2  86      7  89',
+      ' 3  91      8  ·',
+      ' 4  87      9  …',
+      ' 5  85     10  FAIL',
+    ]);
+  });
+
+  it('puts the first half of an odd run count on the left', () => {
+    const slots: RunSlot[] = [
+      { kind: 'score', score: 90 },
+      { kind: 'pending' },
+      { kind: 'score', score: 70 },
+    ];
+    expect(renderRunGrid(slots).split('\n')).toEqual(['1  90     3  70', '2  ·']);
   });
 
   it('lets the caller set how many PSI runs go into the report', () => {

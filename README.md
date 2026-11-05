@@ -88,11 +88,14 @@ npm run psi -- https://example.com/ --desktop --runs 15
 A default mobile run, 10 PSI runs, looks like this:
 
 ```
-run 6/10  score 95
-run 5/10  score 95
-run 2/10  score 95
-...
-run 3/10  score 95
+PSI - API
+mobile · 10 runs · https://qwik-guvi-perf-fix.codingpuppet.com/zen-class/
+
+ 1  95     6  95
+ 2  95     7  95
+ 3  95     8  95
+ 4  95     9  95
+ 5  95    10  95
 
 https://qwik-guvi-perf-fix.codingpuppet.com/zen-class/
 mobile · Lighthouse 13.5.0 · median of 10/10 runs · 2026-09-30
@@ -199,7 +202,7 @@ Filters compose with `--reportId`, so narrowing a work queue after a 10-run base
 
 The default view, top to bottom. The sample in [Measure a page](#measure-a-page) shows each part.
 
-**Progress lines** (stderr, only when PSI is actually run). One `run N/10  score S` line per run as it finishes. Runs execute concurrently (`PSI_CONCURRENCY`), so they arrive out of order — the number is the run's slot, not its finishing position. A failed run prints `run N/10  FAILED  <reason>`, and a retry prints `retry: <reason> (<delay>ms)`. A run that repeats an analysis timestamp already accepted prints `run N/10  cached, retrying` and is not kept; see [PSI caches per URL](#psi-caches-per-url).
+**Progress** (stderr, only when PSI is actually run). A terminal shows a `PSI - API` title, then a two-column grid filled in by run number as each call finishes. Ten runs are five and five. A slot that has not finished is `·`, a cached retry is `…`, and a failed slot is `FAIL`. Runs still execute concurrently (`PSI_CONCURRENCY`); the grid keeps number order. When stderr is not a terminal, each finish is one line instead: `run N/10  score S`, `cached, retrying`, or `FAILED  <reason>`, and an HTTP retry prints `retry: <reason> (<delay>ms)`. See [PSI caches per URL](#psi-caches-per-url).
 
 **Header.** The measured URL (without the cache-busting nonce), then `strategy · Lighthouse version · <stat> of <succeeded>/<requested> runs · date`, then the [measured under](#the-measured-under-line) line.
 
