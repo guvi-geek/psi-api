@@ -270,65 +270,67 @@ describe('cli flags', () => {
     });
   });
 
-  it('lays ten runs out as two columns of five', () => {
-    const slots: RunSlot[] = [
-      { kind: 'score', score: 85 },
-      { kind: 'score', score: 86 },
+  it('numbers finished runs in completion order, five per line', () => {
+    const finished: RunSlot[] = [
       { kind: 'score', score: 91 },
-      { kind: 'score', score: 87 },
+      { kind: 'score', score: 85 },
+      { kind: 'score', score: 89 },
+      { kind: 'score', score: 86 },
       { kind: 'score', score: 85 },
       { kind: 'score', score: 86 },
-      { kind: 'score', score: 89 },
-      { kind: 'pending' },
-      { kind: 'cached' },
       { kind: 'fail' },
     ];
-    const spin = RUN_SPINNER[0];
-    expect(renderRunGrid(slots).split('\n')).toEqual([
-      ' 1. 85%     6. 86%',
-      ' 2. 86%     7. 89%',
-      ' 3. 91%     8. ' + spin,
-      ' 4. 87%     9. ' + spin,
-      ' 5. 85%    10. FAIL',
+    expect(renderRunGrid(finished).split('\n')).toEqual([
+      '1. 91%    2. 85%    3. 89%    4. 86%    5. 85%',
+      '6. 86%    7. FAIL',
     ]);
   });
 
-  it('puts the first half of an odd run count on the left', () => {
-    const slots: RunSlot[] = [
-      { kind: 'score', score: 90 },
-      { kind: 'pending' },
-      { kind: 'score', score: 70 },
+  it('shows a loading indicator in the next unfinished slot', () => {
+    const spin = RUN_SPINNER[0];
+    expect(renderRunGrid([], 10)).toBe(` 1. ${spin}`);
+
+    const finished: RunSlot[] = [
+      { kind: 'score', score: 91 },
+      { kind: 'score', score: 85 },
     ];
-    expect(renderRunGrid(slots).split('\n')).toEqual(['1. 90%    3. 70%', '2. ' + RUN_SPINNER[0]]);
+    expect(renderRunGrid(finished, 10)).toBe(` 1. 91%     2. 85%     3. ${spin}`);
+    expect(renderRunGrid(finished, 10, false, 1)).toContain(RUN_SPINNER[1]);
+    expect(renderRunGrid(finished, 10, false, 1)).not.toContain('4. ');
+
+    const five: RunSlot[] = Array.from({ length: 5 }, () => ({ kind: 'score' as const, score: 80 }));
+    expect(renderRunGrid(five, 10).split('\n')).toEqual([' 1. 80%     2. 80%     3. 80%     4. 80%     5. 80%', ` 6. ${spin}`]);
   });
 
-  it('keeps five rows and adds columns past ten runs', () => {
+  it('keeps a short run on one line', () => {
+    const finished: RunSlot[] = [
+      { kind: 'score', score: 90 },
+      { kind: 'score', score: 70 },
+    ];
+    expect(renderRunGrid(finished)).toBe('1. 90%    2. 70%');
+  });
+
+  it('starts a new line after every five runs', () => {
     const twenty: RunSlot[] = Array.from({ length: 20 }, (_, index) => ({
       kind: 'score' as const,
       score: index + 1,
     }));
     const lines = renderRunGrid(twenty).split('\n');
-    expect(lines).toHaveLength(5);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toContain(' 1. 1%');
-    expect(lines[0]).toContain(' 6. 6%');
-    expect(lines[0]).toContain('11. 11%');
-    expect(lines[0]).toContain('16. 16%');
-    expect(lines[4]).toContain(' 5. 5%');
-    expect(lines[4]).toContain('10. 10%');
-    expect(lines[4]).toContain('15. 15%');
-    expect(lines[4]).toContain('20. 20%');
+    expect(lines[0]).toContain(' 5. 5%');
+    expect(lines[0]).not.toContain(' 6. 6%');
+    expect(lines[1]).toContain(' 6. 6%');
+    expect(lines[3]).toContain('16. 16%');
+    expect(lines[3]).toContain('20. 20%');
 
     const forty: RunSlot[] = Array.from({ length: 40 }, () => ({ kind: 'score' as const, score: 80 }));
     const wide = renderRunGrid(forty).split('\n');
-    expect(wide).toHaveLength(5);
-    expect(wide[0]).toContain('36. 80%');
-    expect(wide[4]).toContain('40. 80%');
-  });
-
-  it('advances the spinner frame for runs still in progress', () => {
-    const slots: RunSlot[] = [{ kind: 'pending' }, { kind: 'score', score: 87 }];
-    expect(renderRunGrid(slots, false, 1)).toContain(RUN_SPINNER[1]);
-    expect(renderRunGrid(slots, false, 1)).toContain('87%');
+    expect(wide).toHaveLength(8);
+    expect(wide[0]).toContain(' 1. 80%');
+    expect(wide[0]).not.toContain(' 6. 80%');
+    expect(wide[7]).toContain('36. 80%');
+    expect(wide[7]).toContain('40. 80%');
   });
 
   it('lets the caller set how many PSI runs go into the report', () => {

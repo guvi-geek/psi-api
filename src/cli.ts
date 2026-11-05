@@ -197,99 +197,117 @@ function fail(message: string): never {
   process.exit(1);
 }
 
-export type RunSlot =
-  | { kind: 'pending' }
-  | { kind: 'cached' }
-  | { kind: 'score'; score: number }
-  | { kind: 'fail' };
+export type RunSlot = { kind: 'score'; score: number } | { kind: 'fail' } | { kind: 'loading' };
 
-/** One frame of the in-progress mark. Cycled while a run has not finished. */
+/** One frame of the mark shown in the next unfinished slot. */
 export const RUN_SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'] as const;
 
-/** `1. 87%`, with the run number padded so both columns share a decimal point. */
+/** Finished runs share a line until this many are on it, then the next line starts. */
+export const RUNS_PER_LINE = 5;
+
+/** `1. 87%`, with the run number padded so a line of results lines up. */
 function runCell(run: number, total: number, slot: RunSlot, useColor: boolean, frame: number): string {
   const id = String(run).padStart(String(total).length, ' ');
-  const spinning = slot.kind === 'pending' || slot.kind === 'cached';
-  const body = spinning
-    ? paint('cyan', RUN_SPINNER[frame % RUN_SPINNER.length] ?? RUN_SPINNER[0], useColor)
-    : slot.kind === 'fail'
-      ? paint('yellow', 'FAIL', useColor)
-      : `${Math.round(slot.score)}%`;
+  const body =
+    slot.kind === 'loading'
+      ? paint('cyan', RUN_SPINNER[frame % RUN_SPINNER.length] ?? RUN_SPINNER[0], useColor)
+      : slot.kind === 'fail'
+        ? paint('yellow', 'FAIL', useColor)
+        : `${Math.round(slot.score)}%`;
   const pad = 4 - visibleLength(body);
   return `${id}. ${body}${' '.repeat(pad > 0 ? pad : 0)}`;
 }
 
-/** A column never grows past this. Further runs open another column, up to 40. */
-const ROWS_PER_COLUMN = 5;
-
 /**
- * Runs in number order, at most five per column. Ten runs are five and five.
- * Twenty runs are four columns of five. Up to ten, the first half stays on the
- * left. `frame` picks the spinner glyph for runs that are still in progress.
+ * Finished runs in completion order, five per line. The first to finish is 1.
+ * Until that result arrives, 1 itself is the spinner. After it lands, the next
+ * open number spins, until every requested run has finished.
  */
-export function renderRunGrid(slots: RunSlot[], useColor = false, frame = 0): string {
-  const total = slots.length;
-  if (total === 0) return '';
-  const rows = Math.min(ROWS_PER_COLUMN, Math.ceil(total / 2));
-  const columns = Math.ceil(total / rows);
+export function renderRunGrid(finished: RunSlot[], total = finished.length, useColor = false, frame = 0): string {
+  const count = Math.max(total, finished.length);
+  if (count === 0) return '';
+  const cells: string[] = [];
+  for (let index = 0; index < finished.length; index += 1) {
+    const slot = finished[index];
+    if (slot) cells.push(runCell(index + 1, count, slot, useColor, frame));
+  }
+  if (finished.length < total) cells.push(runCell(finished.length + 1, count, { kind: 'loading' }, useColor, frame));
+  if (cells.length === 0) return '';
   const lines: string[] = [];
-  for (let row = 0; row < rows; row += 1) {
-    const cells: string[] = [];
-    for (let column = 0; column < columns; column += 1) {
-      const index = column * rows + row;
-      if (index >= total) break;
-      cells.push(runCell(index + 1, total, slots[index] ?? { kind: 'pending' }, useColor, frame));
-    }
-    lines.push(cells.join('   ').trimEnd());
+  for (let index = 0; index < cells.length; index += RUNS_PER_LINE) {
+    lines.push(cells.slice(index, index + RUNS_PER_LINE).join('   ').trimEnd());
   }
   return lines.join('\n');
 }
 
-/** Live two-column progress on a terminal. A pipe gets one line per finish. */
+/**
+ * Numbers runs by finish order and keeps one spinner in the next open slot.
+ * A terminal redraws that grid in place. A pipe prints each finish once.
+ */
 class RunProgress {
-  private readonly slots: RunSlot[];
-  private drawn = 0;
-  private frame = 0;
-  private timer: ReturnType<typeof setInterval> | undefined;
-  readonly live: boolean;
+  private readonly finished: RunSlot[] = [];
+  private readonly total: number;
+  private readonly live: boolean;
   private readonly useColor: boolean;
+  private frame = 0;
+  private drawn = 0;
+  private closed = false;
+  private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(total: number) {
-    this.slots = Array.from({ length: total }, () => ({ kind: 'pending' as const }));
+    this.total = total;
     this.live = process.stderr.isTTY === true;
     this.useColor = colorEnabled();
   }
 
-  /** Draw the grid, and keep redrawing it so in-progress runs spin. */
+  /** Draw the first spinner, and keep it moving until every run has finished. */
   start(): void {
-    this.show();
     if (!this.live) return;
+    this.show(true);
     this.timer = setInterval(() => {
-      if (!this.busy()) {
+      if (this.closed || this.finished.length >= this.total) {
         this.stop();
         return;
       }
       this.frame = (this.frame + 1) % RUN_SPINNER.length;
-      this.show();
+      this.show(true);
     }, 80);
     this.timer.unref();
   }
 
+  /** Drop the spinner so the report or an error starts on the next line. */
   stop(): void {
+    if (this.closed) return;
+    this.closed = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    if (this.live) {
+      if (this.drawn > 0) this.show(false);
+      return;
+    }
+    if (this.finished.length > 0 && this.finished.length % RUNS_PER_LINE !== 0) process.stderr.write('\n');
   }
 
-  private busy(): boolean {
-    return this.slots.some((slot) => slot.kind === 'pending' || slot.kind === 'cached');
+  note(info: { run: number; ok: boolean; score?: number; error?: string; cached?: boolean }): void {
+    if (this.closed || info.cached) return;
+    this.finished.push(info.ok ? { kind: 'score', score: info.score ?? 0 } : { kind: 'fail' });
+    if (this.live) {
+      this.show(true);
+      return;
+    }
+    const slot = this.finished[this.finished.length - 1];
+    if (!slot) return;
+    const cell = runCell(this.finished.length, this.total, slot, this.useColor, 0);
+    const endOfLine = this.finished.length % RUNS_PER_LINE === 0;
+    process.stderr.write(endOfLine ? `${cell.trimEnd()}\n` : `${cell}   `);
   }
 
-  private show(): void {
+  private show(includeSpinner: boolean): void {
     if (!this.live) return;
-    const lines = renderRunGrid(this.slots, this.useColor, this.frame).split('\n');
+    const total = includeSpinner ? this.total : this.finished.length;
+    const text = renderRunGrid(this.finished, total, this.useColor, this.frame);
+    const lines = text === '' ? [] : text.split('\n');
     const width = process.stderr.columns && process.stderr.columns > 0 ? process.stderr.columns : 0;
-    // Move back over the previous frame and erase it, including a wrapped row,
-    // so the spinner replaces the grid instead of printing a new copy.
     if (this.drawn > 0) process.stderr.write(`\x1b[${this.drawn}A\x1b[J`);
     let drawn = 0;
     for (const line of lines) {
@@ -298,27 +316,6 @@ class RunProgress {
       drawn += width > 0 ? Math.max(1, Math.ceil(length / width)) : 1;
     }
     this.drawn = drawn;
-  }
-
-  note(info: { run: number; ok: boolean; score?: number; error?: string; cached?: boolean }): void {
-    const slot: RunSlot = info.cached
-      ? { kind: 'cached' }
-      : info.ok
-        ? { kind: 'score', score: info.score ?? 0 }
-        : { kind: 'fail' };
-    this.slots[info.run - 1] = slot;
-    if (!this.busy()) this.stop();
-    if (this.live) {
-      this.show();
-      return;
-    }
-    const total = this.slots.length;
-    const label = info.cached
-      ? `${info.run}. retrying`
-      : info.ok
-        ? `${info.run}. ${Math.round(info.score ?? 0)}%`
-        : `${info.run}. FAILED  ${info.error ?? ''}`;
-    process.stderr.write(`${info.ok ? label : paint('yellow', label, false)}\n`);
   }
 }
 
@@ -1543,8 +1540,8 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           save: !options.noSave,
           targets: loadTargets(),
           onRetry: ({ reason, delayMs }) => {
-            // A live grid is redrawn in place. An extra line would shift it.
-            if (options.json || progress?.live) return;
+            // A retry line would land in the middle of the run row.
+            if (options.json || progress) return;
             process.stderr.write(`${paint('yellow', 'retry', false)}: ${reason} (${delayMs}ms)\n`);
           },
           onRunFinished: (info) => {

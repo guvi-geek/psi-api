@@ -202,7 +202,7 @@ Filters compose with `--reportId`, so narrowing a work queue after a 10-run base
 
 The default view, top to bottom. The sample in [Measure a page](#measure-a-page) shows each part.
 
-**Progress** (stderr, only when PSI is actually run). A terminal shows a `PSI - API` title, then the runs in columns of at most five. Ten runs are five and five. Twenty runs are four columns of five, and forty (the maximum) are eight columns of five. A finished run is `1. 87%`. A run still in progress shows a spinner in that same spot, redrawn in place until the score replaces it. A failed slot is `FAIL`. Runs still execute concurrently (`PSI_CONCURRENCY`); the grid keeps number order down each column. When stderr is not a terminal, each finish is one line instead: `1. 87%`, `1. retrying`, or `1. FAILED  <reason>`, and an HTTP retry prints `retry: <reason> (<delay>ms)`. See [PSI caches per URL](#psi-caches-per-url).
+**Progress** (stderr, only when PSI is actually run). A terminal shows a `PSI - API` title, then the runs as they finish. Before the first result, `1.` shows a spinner. The first run to finish replaces that with `1. 87%`, and `2.` starts spinning. Five runs share a line, and the sixth starts the next line. A failed run is `FAIL`. A cached attempt is not numbered; that run is numbered when an uncached result arrives. See [PSI caches per URL](#psi-caches-per-url).
 
 **Header.** The measured URL (without the cache-busting nonce), then `strategy · Lighthouse version · <stat> of <succeeded>/<requested> runs · date`, then the [measured under](#the-measured-under-line) line.
 
