@@ -3,7 +3,7 @@ import { compareReports, defaultCompareMetric } from '../src/compare.js';
 import { grepSeeds } from '../src/diagnose.js';
 import { failingMetricReadout, fieldP75 } from '../src/readout.js';
 import { assessMeasurement } from '../src/validity.js';
-import { parseArgs, renderRunGrid, type RunSlot } from '../src/cli.js';
+import { RUN_SPINNER, parseArgs, renderRunGrid, type RunSlot } from '../src/cli.js';
 import type { AggregatedReport, MetricKey, NetworkRequest, NormalizedReport, SeriesStats } from '../src/types.js';
 
 function series(p75: number, stddev = 100): SeriesStats {
@@ -283,12 +283,13 @@ describe('cli flags', () => {
       { kind: 'cached' },
       { kind: 'fail' },
     ];
+    const spin = RUN_SPINNER[0];
     expect(renderRunGrid(slots).split('\n')).toEqual([
-      ' 1  85      6  86',
-      ' 2  86      7  89',
-      ' 3  91      8  ·',
-      ' 4  87      9  …',
-      ' 5  85     10  FAIL',
+      ' 1. 85%     6. 86%',
+      ' 2. 86%     7. 89%',
+      ' 3. 91%     8. ' + spin,
+      ' 4. 87%     9. ' + spin,
+      ' 5. 85%    10. FAIL',
     ]);
   });
 
@@ -298,7 +299,13 @@ describe('cli flags', () => {
       { kind: 'pending' },
       { kind: 'score', score: 70 },
     ];
-    expect(renderRunGrid(slots).split('\n')).toEqual(['1  90     3  70', '2  ·']);
+    expect(renderRunGrid(slots).split('\n')).toEqual(['1. 90%    3. 70%', '2. ' + RUN_SPINNER[0]]);
+  });
+
+  it('advances the spinner frame for runs still in progress', () => {
+    const slots: RunSlot[] = [{ kind: 'pending' }, { kind: 'score', score: 87 }];
+    expect(renderRunGrid(slots, false, 1)).toContain(RUN_SPINNER[1]);
+    expect(renderRunGrid(slots, false, 1)).toContain('87%');
   });
 
   it('lets the caller set how many PSI runs go into the report', () => {
