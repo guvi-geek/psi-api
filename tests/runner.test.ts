@@ -89,7 +89,7 @@ describe('runReport', () => {
     }) as unknown as typeof fetch;
 
     await runReport({ url: 'https://example.com/', runs: 999, save: false, fetchImpl: impl, sleepImpl: noSleep, targets });
-    expect(calls).toBe(25);
+    expect(calls).toBe(40);
   });
 
   it('rejects an unreachable url before spending any quota', async () => {

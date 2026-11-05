@@ -302,6 +302,29 @@ describe('cli flags', () => {
     expect(renderRunGrid(slots).split('\n')).toEqual(['1. 90%    3. 70%', '2. ' + RUN_SPINNER[0]]);
   });
 
+  it('keeps five rows and adds columns past ten runs', () => {
+    const twenty: RunSlot[] = Array.from({ length: 20 }, (_, index) => ({
+      kind: 'score' as const,
+      score: index + 1,
+    }));
+    const lines = renderRunGrid(twenty).split('\n');
+    expect(lines).toHaveLength(5);
+    expect(lines[0]).toContain(' 1. 1%');
+    expect(lines[0]).toContain(' 6. 6%');
+    expect(lines[0]).toContain('11. 11%');
+    expect(lines[0]).toContain('16. 16%');
+    expect(lines[4]).toContain(' 5. 5%');
+    expect(lines[4]).toContain('10. 10%');
+    expect(lines[4]).toContain('15. 15%');
+    expect(lines[4]).toContain('20. 20%');
+
+    const forty: RunSlot[] = Array.from({ length: 40 }, () => ({ kind: 'score' as const, score: 80 }));
+    const wide = renderRunGrid(forty).split('\n');
+    expect(wide).toHaveLength(5);
+    expect(wide[0]).toContain('36. 80%');
+    expect(wide[4]).toContain('40. 80%');
+  });
+
   it('advances the spinner frame for runs still in progress', () => {
     const slots: RunSlot[] = [{ kind: 'pending' }, { kind: 'score', score: 87 }];
     expect(renderRunGrid(slots, false, 1)).toContain(RUN_SPINNER[1]);

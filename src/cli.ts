@@ -219,24 +219,28 @@ function runCell(run: number, total: number, slot: RunSlot, useColor: boolean, f
   return `${id}. ${body}${' '.repeat(pad > 0 ? pad : 0)}`;
 }
 
+/** A column never grows past this. Further runs open another column, up to 40. */
+const ROWS_PER_COLUMN = 5;
+
 /**
- * Runs in number order, split into two columns. Ten runs are five and five.
- * Any other count puts the first half on the left. `frame` picks the spinner
- * glyph for runs that are still in progress.
+ * Runs in number order, at most five per column. Ten runs are five and five.
+ * Twenty runs are four columns of five. Up to ten, the first half stays on the
+ * left. `frame` picks the spinner glyph for runs that are still in progress.
  */
 export function renderRunGrid(slots: RunSlot[], useColor = false, frame = 0): string {
   const total = slots.length;
-  const leftCount = Math.ceil(total / 2);
+  if (total === 0) return '';
+  const rows = Math.min(ROWS_PER_COLUMN, Math.ceil(total / 2));
+  const columns = Math.ceil(total / rows);
   const lines: string[] = [];
-  for (let row = 0; row < leftCount; row += 1) {
-    const left = runCell(row + 1, total, slots[row] ?? { kind: 'pending' }, useColor, frame);
-    const rightIndex = row + leftCount;
-    if (rightIndex >= total) {
-      lines.push(left.trimEnd());
-      continue;
+  for (let row = 0; row < rows; row += 1) {
+    const cells: string[] = [];
+    for (let column = 0; column < columns; column += 1) {
+      const index = column * rows + row;
+      if (index >= total) break;
+      cells.push(runCell(index + 1, total, slots[index] ?? { kind: 'pending' }, useColor, frame));
     }
-    const right = runCell(rightIndex + 1, total, slots[rightIndex] ?? { kind: 'pending' }, useColor, frame);
-    lines.push(`${left}   ${right}`.trimEnd());
+    lines.push(cells.join('   ').trimEnd());
   }
   return lines.join('\n');
 }
@@ -283,9 +287,17 @@ class RunProgress {
   private show(): void {
     if (!this.live) return;
     const lines = renderRunGrid(this.slots, this.useColor, this.frame).split('\n');
-    if (this.drawn > 0) process.stderr.write(`\x1b[${this.drawn}A`);
-    for (const line of lines) process.stderr.write(`\x1b[2K${line}\n`);
-    this.drawn = lines.length;
+    const width = process.stderr.columns && process.stderr.columns > 0 ? process.stderr.columns : 0;
+    // Move back over the previous frame and erase it, including a wrapped row,
+    // so the spinner replaces the grid instead of printing a new copy.
+    if (this.drawn > 0) process.stderr.write(`\x1b[${this.drawn}A\x1b[J`);
+    let drawn = 0;
+    for (const line of lines) {
+      process.stderr.write(`${line}\n`);
+      const length = Math.max(1, visibleLength(line));
+      drawn += width > 0 ? Math.max(1, Math.ceil(length / width)) : 1;
+    }
+    this.drawn = drawn;
   }
 
   note(info: { run: number; ok: boolean; score?: number; error?: string; cached?: boolean }): void {

@@ -12,7 +12,7 @@ import { isPageNotFound, isUnreachableMessage } from './validity.js';
 import { applyTargets, loadTargets, type Targets } from './targets.js';
 import { makeReportId, saveReport } from './storage.js';
 
-export const MAX_RUNS = 25;
+export const MAX_RUNS = 40;
 export const DEFAULT_RUNS = 10;
 export const DEFAULT_CONCURRENCY = 10;
 /**

@@ -63,7 +63,7 @@ npm run psi -- https://example.com/
 # Desktop performance, still 10 PSI runs.
 npm run psi -- https://example.com/ --desktop
 
-# Mobile, with your own number of PSI runs (1–25).
+# Mobile, with your own number of PSI runs (1–40).
 npm run psi -- https://example.com/ --runs 5
 
 # Desktop, with your own number of PSI runs.
@@ -77,7 +77,7 @@ npm run psi -- https://example.com/ --desktop --runs 15
 | Mobile, N runs | `npm run psi -- <page> --runs <n>` |
 | Desktop, N runs | `npm run psi -- <page> --desktop --runs <n>` |
 
-`--runs` is how many PSI calls are aggregated into that one report. The default is **10**. The maximum is 25. Fewer runs finish sooner and are only a rough look. Ten is what you compare against a target, because one Lighthouse score moves by several points on a page that did not change.
+`--runs` is how many PSI calls are aggregated into that one report. The default is **10**. The maximum is 40. Fewer runs finish sooner and are only a rough look. Ten is what you compare against a target, because one Lighthouse score moves by several points on a page that did not change.
 
 `--desktop` measures the desktop form factor and the desktop budgets in `config/targets.json`. Leave it off and the command measures **mobile only**. `--strategy desktop` is the same as `--desktop`. `--mobile` forces mobile, which is already the default.
 
@@ -147,7 +147,7 @@ npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
 | --- | --- | --- |
 | `--desktop` | off | Desktop performance. Same as `--strategy desktop`. |
 | `--mobile` | on | Mobile performance. This is the default, so you can leave the flag off. |
-| `--runs <n>` | `10` | How many PSI runs go into this report. 1–25. |
+| `--runs <n>` | `10` | How many PSI runs go into this report. 1–40. |
 | `--strategy <mobile\|desktop>` | `mobile` | Same choice as `--mobile` / `--desktop`. |
 | `--reportId <id>` | — | Re-filter a **stored** report. Costs no quota and runs no PSI calls. |
 | `--reanalyze` | off | Rebuild stored report(s) from their own retained runs with today's rules. Costs no quota. Combine with `--reportId`, or omit it to sweep everything in `data/`. |
@@ -202,7 +202,7 @@ Filters compose with `--reportId`, so narrowing a work queue after a 10-run base
 
 The default view, top to bottom. The sample in [Measure a page](#measure-a-page) shows each part.
 
-**Progress** (stderr, only when PSI is actually run). A terminal shows a `PSI - API` title, then a two-column grid. Ten runs are five and five. A finished run is `1. 87%`. A run still in progress shows a spinner in that same spot, redrawn until the score replaces it. A failed slot is `FAIL`. Runs still execute concurrently (`PSI_CONCURRENCY`); the grid keeps number order. When stderr is not a terminal, each finish is one line instead: `1. 87%`, `1. retrying`, or `1. FAILED  <reason>`, and an HTTP retry prints `retry: <reason> (<delay>ms)`. See [PSI caches per URL](#psi-caches-per-url).
+**Progress** (stderr, only when PSI is actually run). A terminal shows a `PSI - API` title, then the runs in columns of at most five. Ten runs are five and five. Twenty runs are four columns of five, and forty (the maximum) are eight columns of five. A finished run is `1. 87%`. A run still in progress shows a spinner in that same spot, redrawn in place until the score replaces it. A failed slot is `FAIL`. Runs still execute concurrently (`PSI_CONCURRENCY`); the grid keeps number order down each column. When stderr is not a terminal, each finish is one line instead: `1. 87%`, `1. retrying`, or `1. FAILED  <reason>`, and an HTTP retry prints `retry: <reason> (<delay>ms)`. See [PSI caches per URL](#psi-caches-per-url).
 
 **Header.** The measured URL (without the cache-busting nonce), then `strategy · Lighthouse version · <stat> of <succeeded>/<requested> runs · date`, then the [measured under](#the-measured-under-line) line.
 
@@ -748,7 +748,7 @@ Runs PSI and returns the aggregated report. **This costs `runs` quota units and 
 | --- | --- | --- |
 | `url` | *required* | Must be public `http`/`https`. |
 | `strategy` | `mobile` | `mobile` or `desktop`. |
-| `runs` | `10` | 1–25. |
+| `runs` | `10` | 1–40. |
 | `stat` | `median` | `mean`, `median` or `mode`. Headline statistic. |
 | `force` | `false` | Skip the 10-minute cache. |
 | `async` | `false` | Return `{ jobId }` immediately instead of waiting. |
