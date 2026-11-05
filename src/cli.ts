@@ -1405,16 +1405,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
           if (options.json) return;
           process.stderr.write(`${paint('yellow', 'retry', false)}: ${reason} (${delayMs}ms)\n`);
         },
-        onRunFinished: ({ run, ok, score, error }) => {
+        onRunFinished: ({ run, ok, score, error, cached }) => {
           if (options.json) return;
           // One line per run, appended and never rewritten. A carriage return
           // would leave a single line that overwrites itself, which hides the
           // per-run spread the reader needs in order to judge the aggregate
           // that follows - and a report whose runs cannot be seen individually
           // cannot be checked for the cached-timestamp failure mode.
-          const label = ok
-            ? `run ${run}/${options.runs}  score ${Math.round(score as number)}`
-            : `run ${run}/${options.runs}  FAILED  ${error}`;
+          const label = cached
+            ? `run ${run}/${options.runs}  cached, retrying`
+            : ok
+              ? `run ${run}/${options.runs}  score ${Math.round(score as number)}`
+              : `run ${run}/${options.runs}  FAILED  ${error}`;
           process.stderr.write(`${ok ? label : paint('yellow', label, false)}\n`);
         },
       });

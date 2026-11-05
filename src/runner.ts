@@ -15,6 +15,12 @@ import { makeReportId, saveReport } from './storage.js';
 export const MAX_RUNS = 25;
 export const DEFAULT_RUNS = 10;
 export const DEFAULT_CONCURRENCY = 10;
+/**
+ * How many times one slot may be requested before a repeated analysis timestamp
+ * is given up on. The first fresh timestamp is accepted; later copies are not
+ * a second sample, so they are discarded and the slot is tried again.
+ */
+export const CACHE_ATTEMPTS_PER_RUN = 3;
 
 export interface RunnerOptions {
   url: string;
@@ -32,7 +38,14 @@ export interface RunnerOptions {
   dataDir?: string;
   targets?: Targets;
   onRetry?: (info: RetryInfo) => void;
-  onRunFinished?: (info: { run: number; ok: boolean; score?: number; error?: string }) => void;
+  onRunFinished?: (info: {
+    run: number;
+    ok: boolean;
+    score?: number;
+    error?: string;
+    /** True when this attempt repeated an analysis timestamp already accepted. It was not kept. */
+    cached?: boolean;
+  }) => void;
   signal?: AbortSignal;
 }
 
@@ -91,27 +104,45 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
 
   const reports: Array<{ runNumber: number; report: NormalizedReport }> = [];
   const failures: RunFailure[] = [];
+  // PSI caches per URL. Two responses with the same Lighthouse fetchTime are one
+  // measurement, and the second must not be counted as another sample.
+  const acceptedStamps = new Set<string>();
 
   const runOne = async (runNumber: number): Promise<void> => {
-    try {
-      const result = await runPsiCall({
-        url: validatedUrl,
-        strategy,
-        categories,
-        apiKey,
-        fetchImpl: options.fetchImpl,
-        sleepImpl: options.sleepImpl,
-        randomImpl: options.randomImpl,
-        onRetry,
-        signal,
-      });
-      const normalized = normalizeReport(result.raw, validatedUrl, strategy);
-      reports.push({ runNumber, report: normalized });
-      onRunFinished?.({ run: runNumber, ok: true, score: normalized.score });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push({ run: runNumber, message });
-      onRunFinished?.({ run: runNumber, ok: false, error: message });
+    for (let attempt = 1; attempt <= CACHE_ATTEMPTS_PER_RUN; attempt += 1) {
+      try {
+        const result = await runPsiCall({
+          url: validatedUrl,
+          strategy,
+          categories,
+          apiKey,
+          fetchImpl: options.fetchImpl,
+          sleepImpl: options.sleepImpl,
+          randomImpl: options.randomImpl,
+          onRetry,
+          signal,
+        });
+        const normalized = normalizeReport(result.raw, validatedUrl, strategy);
+        if (acceptedStamps.has(normalized.fetchTime)) {
+          if (attempt === CACHE_ATTEMPTS_PER_RUN) {
+            const message = 'PSI served a cached report';
+            failures.push({ run: runNumber, message });
+            onRunFinished?.({ run: runNumber, ok: false, error: message });
+            return;
+          }
+          onRunFinished?.({ run: runNumber, ok: false, cached: true, error: 'cached, retrying' });
+          continue;
+        }
+        acceptedStamps.add(normalized.fetchTime);
+        reports.push({ runNumber, report: normalized });
+        onRunFinished?.({ run: runNumber, ok: true, score: normalized.score });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push({ run: runNumber, message });
+        onRunFinished?.({ run: runNumber, ok: false, error: message });
+        return;
+      }
     }
   };
 
@@ -163,30 +194,11 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   });
   aggregated = applyTargets(aggregated, targets ?? loadTargets());
 
-  // PSI caches per-URL, so N runs of one URL can collapse into a single cached
-  // report repeated N times. The median would then be one sample wearing 10 hats.
   const runWarnings = [...warnings];
   if (stoppedEarly) {
     const why = first ? 'the page returned 404 Not Found' : (firstFailure ?? 'the host could not be fetched');
     runWarnings.push(`Stopped after the first run: ${why}. The remaining PSI calls were not sent.`);
   }
-  if (ordered.length > 1) {
-    const stamps = new Set(ordered.map((report) => report.fetchTime));
-    if (stamps.size === 1) {
-      runWarnings.push(
-        `All ${ordered.length} runs returned the same analysis timestamp, so PSI served one ` +
-          'cached report instead of re-measuring. The median and stddev here are not ' +
-          'independent samples and must not be used to judge a change. Re-run after the ' +
-          'PSI cache expires, or check that the cache-busting param is reaching the target URL.',
-      );
-    } else if (stamps.size < ordered.length) {
-      runWarnings.push(
-        `Only ${stamps.size} distinct measurements across ${ordered.length} runs - some runs ` +
-          'were served from the PSI cache.',
-      );
-    }
-  }
-
   let dir: string | undefined;
   if (save) {
     const saved = await saveReport(aggregated, ordered, dataDir);

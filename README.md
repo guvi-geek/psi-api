@@ -199,7 +199,7 @@ Filters compose with `--reportId`, so narrowing a work queue after a 10-run base
 
 The default view, top to bottom. The sample in [Measure a page](#measure-a-page) shows each part.
 
-**Progress lines** (stderr, only when PSI is actually run). One `run N/10  score S` line per run as it finishes. Runs execute concurrently (`PSI_CONCURRENCY`), so they arrive out of order — the number is the run's slot, not its finishing position. A failed run prints `run N/10  FAILED  <reason>`, and a retry prints `retry: <reason> (<delay>ms)`. Warnings such as the [PSI cache](#psi-caches-per-url) warning are printed after the last run.
+**Progress lines** (stderr, only when PSI is actually run). One `run N/10  score S` line per run as it finishes. Runs execute concurrently (`PSI_CONCURRENCY`), so they arrive out of order — the number is the run's slot, not its finishing position. A failed run prints `run N/10  FAILED  <reason>`, and a retry prints `retry: <reason> (<delay>ms)`. A run that repeats an analysis timestamp already accepted prints `run N/10  cached, retrying` and is not kept; see [PSI caches per URL](#psi-caches-per-url).
 
 **Header.** The measured URL (without the cache-busting nonce), then `strategy · Lighthouse version · <stat> of <succeeded>/<requested> runs · date`, then the [measured under](#the-measured-under-line) line.
 
@@ -463,12 +463,11 @@ https://example.com/?psi_nonce=k3f9a2   <- what is actually requested
 - A single fixed nonce would not help — the cache is keyed on the whole URL, so the value has to differ per run.
 - Pass `cacheBust: false` to `runPsiCall` to disable it, e.g. if a site rejects unknown query parameters.
 
-**The tool also checks.** After a report it compares the upstream analysis timestamps and warns if the runs collapsed:
+**A repeated timestamp is not a run.** After each response the tool compares `lighthouseResult.fetchTime` with the runs already accepted. The same timestamp means PSI served a cached analysis, so that response is discarded and the slot is requested again, up to 3 times. A report contains only runs with distinct timestamps. If fewer than 60% of the requested runs come back uncached, the command fails with `INSUFFICIENT_RUNS` instead of publishing a median built from copies.
 
 ```
-warning: All 10 runs returned the same analysis timestamp, so PSI served one cached
-report instead of re-measuring. The median and stddev here are not independent
-samples and must not be used to judge a change.
+run 8/10  cached, retrying
+run 8/10  score 86
 ```
 
 #### `stddev: 0.0` is not always a bug
@@ -477,10 +476,10 @@ Two different things produce zero variance, and they mean opposite things:
 
 | Cause | What you see | Meaning |
 | --- | --- | --- |
-| **PSI cache** (fixed) | Identical *metric values*, and the cache warning fires | The measurement is fake. Do not trust it. |
+| **PSI cache** | The same analysis timestamp comes back again | That response is discarded and retried. It is not a sample. |
 | **A pinned page** | Identical scores, but metrics wobble slightly | Real. A page far inside the "good" band — or scoring 100 — legitimately scores the same every time. |
 
-`https://example.com/` returns `stddev 0.0` for a legitimate reason: it is so far above the thresholds that every run rounds to 100. Its LCP still moves (754 / 771 / 783 ms across three runs). **Check the metrics and the warning, not just the score, before concluding anything.**
+`https://example.com/` returns `stddev 0.0` for a legitimate reason: it is so far above the thresholds that every run rounds to 100. Its LCP still moves (754 / 771 / 783 ms across three runs). **Check the metrics, not just the score, before concluding anything.**
 
 ### First-party vs third party
 
@@ -903,7 +902,7 @@ To regenerate the fixture: `node scripts/make-fixture.js`.
 | Score `0` with a tiny `fetchTime` | The URL is `localhost`/private, so Lighthouse measured an error page. | Measure a deployed public URL. The tool warns about this up front. |
 | Report takes minutes | Each run is a real PSI call, and a report waits for its slowest run. | Check `PSI_CONCURRENCY` is not set low in `.env`. Use `?async=true`, or `runs=3` while iterating. |
 | Every insight shows `-` savings | Unexpected for Lighthouse 10.4+; those versions report `metricSavings`. | Should not happen — `metricSavings` is read as a fallback. If it does, the response shape has changed and the tool needs a look. |
-| `stddev 0.0`, every value identical | Either PSI served one cached report for all runs, or the page is pinned well inside the "good" band. | Read the warnings. If it says "same analysis timestamp", the runs were cached — re-measure. If there is no warning, the page is genuinely stable; check the metric values to see the real spread. |
+| `stddev 0.0`, every value identical | The page is pinned well inside the "good" band. A cached copy is no longer kept in the report. | Check the metric values for the real spread. If PSI keeps returning the same analysis, the command fails with `INSUFFICIENT_RUNS` and `PSI served a cached report`. |
 | Site breaks when a query string is added | Cache busting appends `?psi_nonce=…` to the measured URL. | Rare, but real for strict routers. Use `cacheBust: false` in library code, or confirm the site is measured correctly. |
 
 ## Automation

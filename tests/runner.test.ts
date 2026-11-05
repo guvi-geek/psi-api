@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InsufficientRunsError, runReport } from '../src/runner.js';
+import { CACHE_ATTEMPTS_PER_RUN, InsufficientRunsError, runReport } from '../src/runner.js';
 import { PSI_ERROR_BODY, fakeResponse, fixtureRaw } from './helpers.js';
 
 /** A fetch stand-in that succeeds `ok` times, then always fails. */
@@ -10,9 +10,10 @@ function flakyFetch(ok: number, total: number, scoreOf: (i: number) => number) {
     calls.push(index);
     if (index < ok) {
       const raw = JSON.parse(JSON.stringify(fixtureRaw)) as {
-        lighthouseResult: { categories: { performance: { score: number } } };
+        lighthouseResult: { categories: { performance: { score: number } }; fetchTime: string };
       };
       raw.lighthouseResult.categories.performance.score = scoreOf(index) / 100;
+      raw.lighthouseResult.fetchTime = `2026-01-01T00:00:${String(index).padStart(2, '0')}.000Z`;
       return fakeResponse(raw);
     }
     return fakeResponse(PSI_ERROR_BODY, { status: 429 });
@@ -82,7 +83,9 @@ describe('runReport', () => {
     let calls = 0;
     const impl = (async () => {
       calls += 1;
-      return fakeResponse(fixtureRaw);
+      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as { lighthouseResult: { fetchTime: string } };
+      raw.lighthouseResult.fetchTime = `2026-01-01T00:00:${String(calls).padStart(2, '0')}.000Z`;
+      return fakeResponse(raw);
     }) as unknown as typeof fetch;
 
     await runReport({ url: 'https://example.com/', runs: 999, save: false, fetchImpl: impl, sleepImpl: noSleep, targets });
@@ -118,12 +121,16 @@ describe('runReport', () => {
   it('honours the concurrency limit', async () => {
     let inFlight = 0;
     let peak = 0;
+    let calls = 0;
     const impl = (async () => {
+      calls += 1;
+      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as { lighthouseResult: { fetchTime: string } };
+      raw.lighthouseResult.fetchTime = `2026-01-01T00:00:${String(calls).padStart(2, '0')}.000Z`;
       inFlight += 1;
       peak = Math.max(peak, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 5));
       inFlight -= 1;
-      return fakeResponse(fixtureRaw);
+      return fakeResponse(raw);
     }) as unknown as typeof fetch;
 
     await runReport({
@@ -162,36 +169,32 @@ describe('runReport', () => {
 });
 
 describe('cached-run detection', () => {
-  /**
-   * Emulates PSI's per-URL cache. `lighthouseResult.fetchTime` is what the
-   * runner compares, so that is the field the stub has to vary.
-   */
-  function cachedFetch(stamp: string) {
-    return (async () => {
-      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as {
-        lighthouseResult: { fetchTime: string };
-      };
-      raw.lighthouseResult.fetchTime = stamp;
+  it('refuses a report when every run is the same cached analysis', async () => {
+    let calls = 0;
+    const impl = (async () => {
+      calls += 1;
+      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as { lighthouseResult: { fetchTime: string } };
+      raw.lighthouseResult.fetchTime = '2026-01-01T00:00:00.000Z';
       return fakeResponse(raw);
     }) as unknown as typeof fetch;
-  }
 
-  it('warns when every run came back with the same analysis timestamp', async () => {
-    const result = await runReport({
-      url: 'https://example.com/',
-      runs: 4,
-      save: false,
-      fetchImpl: cachedFetch('2026-01-01T00:00:00.000Z'),
-      sleepImpl: noSleep,
-      targets,
-    });
-
-    expect(result.warnings.join(' ')).toMatch(/same analysis timestamp/i);
-    expect(result.warnings.join(' ')).toMatch(/not\s+independent samples/i);
+    await expect(
+      runReport({
+        url: 'https://example.com/',
+        runs: 4,
+        save: false,
+        fetchImpl: impl,
+        sleepImpl: noSleep,
+        targets,
+      }),
+    ).rejects.toThrow(/cached report/);
+    // The first timestamp is a real sample. Each later slot retries, then is dropped.
+    expect(calls).toBe(1 + 3 * CACHE_ATTEMPTS_PER_RUN);
   });
 
-  it('warns when only some runs were cached', async () => {
+  it('retries a cached run and keeps only distinct timestamps', async () => {
     let call = 0;
+    const finished: string[] = [];
     const impl = (async () => {
       call += 1;
       const stamp = call <= 2 ? '2026-01-01T00:00:00.000Z' : `2026-01-01T00:00:0${call}.000Z`;
@@ -207,9 +210,45 @@ describe('cached-run detection', () => {
       fetchImpl: impl,
       sleepImpl: noSleep,
       targets,
+      onRunFinished: (info) => {
+        if (info.cached) finished.push('cached');
+      },
     });
 
-    expect(result.warnings.join(' ')).toMatch(/distinct measurements/i);
+    expect(finished).toContain('cached');
+    expect(result.report.runsSucceeded).toBe(4);
+    expect(new Set(result.runs.map((run) => run.fetchTime)).size).toBe(4);
+    expect(result.warnings.join(' ')).not.toMatch(/distinct measurements|cached/i);
+  });
+
+  it('drops a slot that stays cached and still reports the uncached runs', async () => {
+    let call = 0;
+    const impl = (async () => {
+      call += 1;
+      // Run 1 is fresh. The next slot repeats that timestamp until it gives up,
+      // then later slots are fresh again. Concurrency 1 keeps that order.
+      const stamp =
+        call === 1 || call > 1 + CACHE_ATTEMPTS_PER_RUN
+          ? `2026-01-01T00:00:0${call}.000Z`
+          : '2026-01-01T00:00:01.000Z';
+      const raw = JSON.parse(JSON.stringify(fixtureRaw)) as { lighthouseResult: { fetchTime: string } };
+      raw.lighthouseResult.fetchTime = stamp;
+      return fakeResponse(raw);
+    }) as unknown as typeof fetch;
+
+    const result = await runReport({
+      url: 'https://example.com/',
+      runs: 5,
+      concurrency: 1,
+      save: false,
+      fetchImpl: impl,
+      sleepImpl: noSleep,
+      targets,
+    });
+
+    expect(result.report.runsSucceeded).toBe(4);
+    expect(result.report.errors).toEqual([{ run: 2, message: 'PSI served a cached report' }]);
+    expect(new Set(result.runs.map((run) => run.fetchTime)).size).toBe(result.runs.length);
   });
 
   it('stays silent when every run is genuinely distinct', async () => {
@@ -262,8 +301,9 @@ describe('early stop', () => {
     const impl = (async () => {
       calls += 1;
       const raw = JSON.parse(JSON.stringify(fixtureRaw)) as {
-        lighthouseResult: { audits: Record<string, unknown> };
+        lighthouseResult: { fetchTime: string; audits: Record<string, unknown> };
       };
+      raw.lighthouseResult.fetchTime = `2026-01-01T00:00:${String(calls).padStart(2, '0')}.000Z`;
       raw.lighthouseResult.audits['network-requests'] = {
         details: {
           type: 'table',
