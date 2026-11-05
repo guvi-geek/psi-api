@@ -1,13 +1,14 @@
 # psi-api
 
-A small, deterministic wrapper around the [Google PageSpeed Insights](https://developers.google.com/speed/docs/insights/v5/get-started) v5 API.
+Measure a public page from the terminal with the [Google PageSpeed Insights](https://developers.google.com/speed/docs/insights/v5/get-started) API.
 
-It exists to answer two questions reliably:
+One PSI run is noisy. The default command runs the page **10 times on mobile**, then prints the median, the spread, and which targets the page misses. Desktop performance is the same command with `--desktop`. The number of runs in a report is `--runs`.
 
-1. **How fast is this page, really?** One PSI run is noisy. This tool runs N times, aggregates, and reports the median alongside mean/mode plus the standard deviation so you can tell a real improvement from measurement drift.
-2. **What should I fix first?** Every Lighthouse audit is normalized into a filterable insight with estimated savings, so you can ask for exactly the failures that hurt LCP or TBT, sorted by cost.
+```bash
+npm run psi -- <page>
+```
 
-It is usable three ways — an HTTP API, a CLI, or the same functions as a library — and it keeps raw runs on disk so a report can be re-filtered later without spending more quota.
+That is the tool. The local HTTP server is optional and is documented at the end, under [Additional: HTTP server](#additional-http-server). You do not need it to measure a page. Reports are kept on disk, so you can re-read one later without spending more quota.
 
 > This folder is self-contained. It has its own `package.json` and its own git repo, and it does not depend on, or affect, the Qwik app in `../qwik-guvi`.
 
@@ -20,7 +21,6 @@ cd psi-api
 npm install
 cp .env.example .env    # then paste your key
 npm test
-npm run dev              # http://127.0.0.1:3939
 ```
 
 ### Getting a PSI API key
@@ -43,28 +43,49 @@ Without a key, PSI falls back to a shared anonymous quota that is **frequently a
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `PSI_API_KEY` | *(unset)* | Google PSI key. Optional but strongly recommended. |
-| `PORT` | `3939` | HTTP port. |
-| `HOST` | `127.0.0.1` | Bind address. |
 | `PSI_CONCURRENCY` | `10` | Concurrent PSI calls per report (capped at 10). Quota is per run, not per concurrent call. Use `2` without an API key. |
 | `PSI_FIRST_PARTY_HOSTS` | *(unset)* | Extra domains the measured site owns, comma-separated (`guvi.in,guvi.co`). Without this, a CDN on a sister host is filed as third-party. |
-| `LOG_LEVEL` | `info` | Pino log level for the server. |
 | `PSI_DATA_DIR` | `./data` | Where reports are written. |
+| `PORT` | `3939` | HTTP port for the [optional server](#additional-http-server). |
+| `HOST` | `127.0.0.1` | Bind address for the optional server. |
+| `LOG_LEVEL` | `info` | Pino log level for the optional server. |
 
 ---
 
-## Quick start
+## Measure a page
+
+These are the commands. Each one prints a report a person can read. Pass a public `http` or `https` page link.
 
 ```bash
-# CLI, 10 runs, median headline, human-readable
+# Mobile, 10 PSI runs. This is the default: no extra flags.
 npm run psi -- https://example.com/
 
-# JSON, only the opportunities that are actually failing
-npm run --silent psi -- https://example.com --group opportunity,diagnostic --maxScore 0.9 --json
+# Desktop performance, still 10 PSI runs.
+npm run psi -- https://example.com/ --desktop
+
+# Mobile, with your own number of PSI runs (1–25).
+npm run psi -- https://example.com/ --runs 5
+
+# Desktop, with your own number of PSI runs.
+npm run psi -- https://example.com/ --desktop --runs 15
 ```
+
+| You want | Command |
+| --- | --- |
+| Mobile, 10 runs | `npm run psi -- <page>` |
+| Desktop, 10 runs | `npm run psi -- <page> --desktop` |
+| Mobile, N runs | `npm run psi -- <page> --runs <n>` |
+| Desktop, N runs | `npm run psi -- <page> --desktop --runs <n>` |
+
+`--runs` is how many PSI calls are aggregated into that one report. The default is **10**. The maximum is 25. Fewer runs finish sooner and are only a rough look. Ten is what you compare against a target, because one Lighthouse score moves by several points on a page that did not change.
+
+`--desktop` measures the desktop form factor and the desktop budgets in `config/targets.json`. Leave it off and the command measures **mobile only**. `--strategy desktop` is the same as `--desktop`. `--mobile` forces mobile, which is already the default.
 
 > `--silent` matters for anything machine-parsed. `npm run` writes its own `> psi-api@1.0.0 psi` banner to **stdout**, which breaks `npm run psi -- ... --json | jq`. Use `npm run --silent psi --` whenever the output is piped or parsed.
 
 > The URL has to be reachable **from Google's public cloud**, not just from your machine. `https://www.guvi.co/` and `https://www.guin.com/` both currently return `FAILED_DOCUMENT_REQUEST` on every run for that reason, so neither is usable as a measurement target until it is publicly reachable.
+
+A default mobile run, 10 PSI runs, looks like this:
 
 ```
 run 6/10  score 95
@@ -104,169 +125,30 @@ FINDINGS  32 shown
 saved as reportId 2026-09-30T08-04-23Z-mobile
 ```
 
-Every part of this is explained in [Reading the output](#reading-the-output).
-
----
-
-## HTTP API
-
-All responses are JSON. Errors are always `{ "error": { "code", "message" } }` with a matching status code.
-
-### `POST /report` (or `GET /report?...`)
-
-Runs PSI and returns the aggregated report. **This costs `runs` quota units and takes a while** — for anything above ~3 runs, prefer `?async=true`.
-
-| Param | Default | Notes |
-| --- | --- | --- |
-| `url` | *required* | Must be public `http`/`https`. |
-| `strategy` | `mobile` | `mobile` or `desktop`. |
-| `runs` | `10` | 1–25. |
-| `stat` | `median` | `mean`, `median` or `mode`. Headline statistic. |
-| `force` | `false` | Skip the 10-minute cache. |
-| `async` | `false` | Return `{ jobId }` immediately instead of waiting. |
-
-```bash
-# single fast check
-curl "http://127.0.0.1:3939/report?url=https://example.com&runs=3"
-
-# full 10-run report, as JSON body
-curl -X POST http://127.0.0.1:3939/report \
-  -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","runs":10,"stat":"median","strategy":"mobile"}'
-
-# don't block on a long run
-curl -X POST http://127.0.0.1:3939/report \
-  -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","runs":10,"async":true}'
-# -> {"jobId":"job_m1a2b3_7","status":"queued"}
-
-curl http://127.0.0.1:3939/jobs/job_m1a2b3_7
-```
-
-Responses for the same `url` + `strategy` + `runs` + `stat` are cached in memory for 10 minutes; a cache hit is returned with `"cached": true`. Use `force=true` to measure again immediately.
-
-### `GET /report/:reportId`
-
-Re-reads a stored report from disk. No quota cost.
-
-```bash
-curl http://127.0.0.1:3939/report/2026-09-29T10-30-00Z-mobile
-```
-
-### `GET /report/:reportId/insights`
-
-Filters a stored report. Every parameter is optional and they all combine.
-
-| Param | Meaning |
-| --- | --- |
-| `group` | `opportunity`, `diagnostic`, `passed`, `informative`. Comma-separated. |
-| `minSavingsMs` / `minSavingsBytes` | Minimum estimated saving. |
-| `maxScore` | Only audits scoring at or below this, e.g. `0.9` for failing/weak. |
-| `metric` | `lcp`, `tbt`, `cls`, `fcp`, `speedIndex`, `tti`, `ttfb`, `inp`. Comma-separated. |
-| `search` | Case-insensitive substring of audit id or title. |
-| `id` | Exact audit ids, comma-separated. |
-| `hasItems` | `true` = only audits carrying a `details.items` list. |
-| `sortBy` | `savingsMs` (default), `savingsBytes`, `score`, `firstPartyShare`. |
-| `order` | `desc` (default) or `asc`. |
-| `party` | `any` (default), `first`, `third`. See below. |
-| `minFirstPartyRatio` | `0`–`1`. Keep only insights whose `firstPartyShare` is at least this. |
-| `limit` | Max results. |
-| `includeFlaky` | `true` (default). `false` hides insights seen in <30% of runs. |
-
-```bash
-# the LCP work queue
-curl "http://127.0.0.1:3939/report/$ID/insights?group=opportunity,diagnostic&maxScore=0.9&metric=lcp&sortBy=savingsMs"
-
-# everything that could save at least 100ms, cheapest first
-curl "http://127.0.0.1:3939/report/$ID/insights?minSavingsMs=100&order=asc"
-
-# mostly your own cost, ranked by how much of it is yours
-curl "http://127.0.0.1:3939/report/$ID/insights?minFirstPartyRatio=0.5&sortBy=firstPartyShare"
-```
-
-The response carries the headline numbers and target verdict alongside the filtered list, so one call is usually enough:
-
-```json
-{
-  "reportId": "2026-09-29T10-30-00Z-mobile",
-  "headline": { "score": 58, "metrics": { "lcp": 3210, "tbt": 90 } },
-  "targets": {
-    "meetsTarget": false,
-    "medianPass": true,
-    "gaps": [ { "metric": "lcp", "actual": 3210, "target": 2500, "delta": 710, "passRate": 0.8, "overBudgetRuns": 2, "runsMeasured": 10, "p75": 3400, "p95": 3900, "meets": false } ],
-    "blockedBy": []
-  },
-  "lcp": { "isText": true, "phases": {}, "bottleneck": "render" },
-  "distributions": { "score": { "bimodal": false } },
-  "totalInsights": 19,
-  "matched": 3,
-  "insights": [ /* ... */ ]
-}
-```
-
-### `GET /report/:reportId/diagnosis`
-
-The ranked work queue. Where `/insights` answers "what did Lighthouse find", this answers "what should I work on": it orders findings by how they bear on the metrics that are actually failing, attaches the playbook route for each, and reports the things that would otherwise be over-read.
-
-```bash
-curl "http://127.0.0.1:3939/report/$ID/diagnosis?party=first"
-```
-
-| Field | |
-| --- | --- |
-| `priorityOrder` | Failing gaps, worst relative overshoot first. |
-| `primary` | The single metric to work on. |
-| `ranked` | The queue: each finding with its `sop` route, `affectsFailing`, `firstPartyShare`, `thirdPartyOnly` and a plain-English `reason`. |
-| `unreliable` | Metrics whose median is inside budget but whose runs are not — the false-PASS case. |
-| `blocked` | Budgets the server round trip makes unreachable. |
-| `cautions` | Everything that changes how the numbers should be read. |
-| `exhausted` | `true` when the failing metrics have no first-party work left against them. Stop and escalate. |
-| `images` | The full image-check list. The CLI's IMAGE CHECKS block caps at 15 rows; this is every finding. |
-
-The response also carries `reportId`, `url`, `strategy`, `headline`, `targets`, `lcp` and `distributions`.
-
-`npm run psi -- --reportId <id> --diagnose` renders the same queue as text, through the same code path — but the CLI's IMAGE CHECKS block prints at most 15 rows, so read this endpoint (or `--json`) for the full list.
-
-### `POST /insights`
-
-One call that runs (or reuses) a report and applies filters to it — the HTTP equivalent of the CLI.
-
-```bash
-curl -X POST http://127.0.0.1:3939/insights \
-  -H 'content-type: application/json' \
-  -d '{
-        "url": "https://example.com",
-        "runs": 10,
-        "stat": "median",
-        "strategy": "mobile",
-        "filters": { "group": ["opportunity", "diagnostic"], "maxScore": 0.9, "sortBy": "savingsMs", "limit": 5 }
-      }'
-```
-
-### `GET /health`
-
-```bash
-curl http://127.0.0.1:3939/health
-# {"status":"ok","uptimeSeconds":42,"apiKeyConfigured":true,"cacheEntries":0,"activeJobs":0}
-```
+Every part of this is explained in [Reading the output](#reading-the-output). Filters, a ranked work queue, and re-reading a report you already paid for are in [CLI](#cli).
 
 ---
 
 ## CLI
 
-```bash
-npm run psi -- <url> [options]
-```
+The same command as [Measure a page](#measure-a-page). Nothing here starts the HTTP server.
 
-Runs the same core code as the server, so no server is needed.
+```bash
+npm run psi -- <page>                         # mobile, 10 runs
+npm run psi -- <page> --desktop               # desktop, 10 runs
+npm run psi -- <page> --runs <n>              # mobile, n runs
+npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
+```
 
 | Option | Default | |
 | --- | --- | --- |
+| `--desktop` | off | Desktop performance. Same as `--strategy desktop`. |
+| `--mobile` | on | Mobile performance. This is the default, so you can leave the flag off. |
+| `--runs <n>` | `10` | How many PSI runs go into this report. 1–25. |
+| `--strategy <mobile\|desktop>` | `mobile` | Same choice as `--mobile` / `--desktop`. |
 | `--reportId <id>` | — | Re-filter a **stored** report. Costs no quota and runs no PSI calls. |
 | `--reanalyze` | off | Rebuild stored report(s) from their own retained runs with today's rules. Costs no quota. Combine with `--reportId`, or omit it to sweep everything in `data/`. |
-| `--runs <n>` | `10` | 1–25. |
 | `--stat <mean\|median\|mode>` | `median` | Headline statistic. |
-| `--strategy <mobile\|desktop>` | `mobile` | |
 | `--group <list>` | — | `opportunity,diagnostic,passed,informative`. |
 | `--minSavingsMs <n>` | — | |
 | `--minSavingsBytes <n>` | — | |
@@ -288,7 +170,10 @@ Runs the same core code as the server, so no server is needed.
 | `--no-save` | off | Don't write to `data/`. |
 
 ```bash
+npm run psi -- https://example.com
+npm run psi -- https://example.com --desktop
 npm run psi -- https://example.com --runs 3
+npm run psi -- https://example.com --desktop --runs 15
 npm run psi -- https://example.com --group opportunity --metric lcp --sortBy savingsMs --limit 5
 npm run psi -- https://example.com --search "third-party" --json
 
@@ -312,7 +197,7 @@ Filters compose with `--reportId`, so narrowing a work queue after a 10-run base
 
 ### Reading the output
 
-The default view, top to bottom. The sample in [Quick start](#quick-start) shows each part.
+The default view, top to bottom. The sample in [Measure a page](#measure-a-page) shows each part.
 
 **Progress lines** (stderr, only when PSI is actually run). One `run N/10  score S` line per run as it finishes. Runs execute concurrently (`PSI_CONCURRENCY`), so they arrive out of order — the number is the run's slot, not its finishing position. A failed run prints `run N/10  FAILED  <reason>`, and a retry prints `retry: <reason> (<delay>ms)`. Warnings such as the [PSI cache](#psi-caches-per-url) warning are printed after the last run.
 
@@ -840,6 +725,156 @@ data/
 A host directory may also hold an `optimization-log.md`, the append-only per-host record an optimizing agent maintains — see [AGENT_GUIDE.md](./AGENT_GUIDE.md) Step 10. The tool never creates or reads it.
 
 The public `guvi-guvi` SOP sets the real bar: **Lighthouse 90+ minimum, 95+ best case, mobile and desktop.** The desktop thresholds above are the tighter interpretation of that; adjust both to match what you actually enforce.
+
+---
+
+## Additional: HTTP server
+
+You do not need this to measure a page. The commands in [Measure a page](#measure-a-page) run the same checks in the terminal. Start the server only when another program should call the JSON API.
+
+```bash
+npm run dev    # http://127.0.0.1:3939
+```
+
+All responses are JSON. Errors are always `{ "error": { "code", "message" } }` with a matching status code.
+
+### `POST /report` (or `GET /report?...`)
+
+Runs PSI and returns the aggregated report. **This costs `runs` quota units and takes a while** — for anything above ~3 runs, prefer `?async=true`.
+
+| Param | Default | Notes |
+| --- | --- | --- |
+| `url` | *required* | Must be public `http`/`https`. |
+| `strategy` | `mobile` | `mobile` or `desktop`. |
+| `runs` | `10` | 1–25. |
+| `stat` | `median` | `mean`, `median` or `mode`. Headline statistic. |
+| `force` | `false` | Skip the 10-minute cache. |
+| `async` | `false` | Return `{ jobId }` immediately instead of waiting. |
+
+```bash
+# single fast check
+curl "http://127.0.0.1:3939/report?url=https://example.com&runs=3"
+
+# full 10-run report, as JSON body
+curl -X POST http://127.0.0.1:3939/report \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","runs":10,"stat":"median","strategy":"mobile"}'
+
+# don't block on a long run
+curl -X POST http://127.0.0.1:3939/report \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","runs":10,"async":true}'
+# -> {"jobId":"job_m1a2b3_7","status":"queued"}
+
+curl http://127.0.0.1:3939/jobs/job_m1a2b3_7
+```
+
+Responses for the same `url` + `strategy` + `runs` + `stat` are cached in memory for 10 minutes; a cache hit is returned with `"cached": true`. Use `force=true` to measure again immediately.
+
+### `GET /report/:reportId`
+
+Re-reads a stored report from disk. No quota cost.
+
+```bash
+curl http://127.0.0.1:3939/report/2026-09-29T10-30-00Z-mobile
+```
+
+### `GET /report/:reportId/insights`
+
+Filters a stored report. Every parameter is optional and they all combine.
+
+| Param | Meaning |
+| --- | --- |
+| `group` | `opportunity`, `diagnostic`, `passed`, `informative`. Comma-separated. |
+| `minSavingsMs` / `minSavingsBytes` | Minimum estimated saving. |
+| `maxScore` | Only audits scoring at or below this, e.g. `0.9` for failing/weak. |
+| `metric` | `lcp`, `tbt`, `cls`, `fcp`, `speedIndex`, `tti`, `ttfb`, `inp`. Comma-separated. |
+| `search` | Case-insensitive substring of audit id or title. |
+| `id` | Exact audit ids, comma-separated. |
+| `hasItems` | `true` = only audits carrying a `details.items` list. |
+| `sortBy` | `savingsMs` (default), `savingsBytes`, `score`, `firstPartyShare`. |
+| `order` | `desc` (default) or `asc`. |
+| `party` | `any` (default), `first`, `third`. See below. |
+| `minFirstPartyRatio` | `0`–`1`. Keep only insights whose `firstPartyShare` is at least this. |
+| `limit` | Max results. |
+| `includeFlaky` | `true` (default). `false` hides insights seen in <30% of runs. |
+
+```bash
+# the LCP work queue
+curl "http://127.0.0.1:3939/report/$ID/insights?group=opportunity,diagnostic&maxScore=0.9&metric=lcp&sortBy=savingsMs"
+
+# everything that could save at least 100ms, cheapest first
+curl "http://127.0.0.1:3939/report/$ID/insights?minSavingsMs=100&order=asc"
+
+# mostly your own cost, ranked by how much of it is yours
+curl "http://127.0.0.1:3939/report/$ID/insights?minFirstPartyRatio=0.5&sortBy=firstPartyShare"
+```
+
+The response carries the headline numbers and target verdict alongside the filtered list, so one call is usually enough:
+
+```json
+{
+  "reportId": "2026-09-29T10-30-00Z-mobile",
+  "headline": { "score": 58, "metrics": { "lcp": 3210, "tbt": 90 } },
+  "targets": {
+    "meetsTarget": false,
+    "medianPass": true,
+    "gaps": [ { "metric": "lcp", "actual": 3210, "target": 2500, "delta": 710, "passRate": 0.8, "overBudgetRuns": 2, "runsMeasured": 10, "p75": 3400, "p95": 3900, "meets": false } ],
+    "blockedBy": []
+  },
+  "lcp": { "isText": true, "phases": {}, "bottleneck": "render" },
+  "distributions": { "score": { "bimodal": false } },
+  "totalInsights": 19,
+  "matched": 3,
+  "insights": [ /* ... */ ]
+}
+```
+
+### `GET /report/:reportId/diagnosis`
+
+The ranked work queue. Where `/insights` answers "what did Lighthouse find", this answers "what should I work on": it orders findings by how they bear on the metrics that are actually failing, attaches the playbook route for each, and reports the things that would otherwise be over-read.
+
+```bash
+curl "http://127.0.0.1:3939/report/$ID/diagnosis?party=first"
+```
+
+| Field | |
+| --- | --- |
+| `priorityOrder` | Failing gaps, worst relative overshoot first. |
+| `primary` | The single metric to work on. |
+| `ranked` | The queue: each finding with its `sop` route, `affectsFailing`, `firstPartyShare`, `thirdPartyOnly` and a plain-English `reason`. |
+| `unreliable` | Metrics whose median is inside budget but whose runs are not — the false-PASS case. |
+| `blocked` | Budgets the server round trip makes unreachable. |
+| `cautions` | Everything that changes how the numbers should be read. |
+| `exhausted` | `true` when the failing metrics have no first-party work left against them. Stop and escalate. |
+| `images` | The full image-check list. The CLI's IMAGE CHECKS block caps at 15 rows; this is every finding. |
+
+The response also carries `reportId`, `url`, `strategy`, `headline`, `targets`, `lcp` and `distributions`.
+
+`npm run psi -- --reportId <id> --diagnose` renders the same queue as text, through the same code path — but the CLI's IMAGE CHECKS block prints at most 15 rows, so read this endpoint (or `--json`) for the full list.
+
+### `POST /insights`
+
+One call that runs (or reuses) a report and applies filters to it — the HTTP equivalent of the CLI.
+
+```bash
+curl -X POST http://127.0.0.1:3939/insights \
+  -H 'content-type: application/json' \
+  -d '{
+        "url": "https://example.com",
+        "runs": 10,
+        "stat": "median",
+        "strategy": "mobile",
+        "filters": { "group": ["opportunity", "diagnostic"], "maxScore": 0.9, "sortBy": "savingsMs", "limit": 5 }
+      }'
+```
+
+### `GET /health`
+
+```bash
+curl http://127.0.0.1:3939/health
+# {"status":"ok","uptimeSeconds":42,"apiKeyConfigured":true,"cacheEntries":0,"activeJobs":0}
+```
 
 ---
 

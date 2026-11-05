@@ -92,15 +92,24 @@ interface CliOptions {
 const USAGE = `
 psi - PageSpeed Insights report
 
+Measure a page from the terminal. The default is mobile performance, 10 PSI
+runs per report. Desktop and a different run count are options on the same
+command. No HTTP server is required.
+
 Usage:
-  npm run psi -- <url> [options]
+  npm run psi -- <page>                         mobile, 10 runs
+  npm run psi -- <page> --desktop               desktop, 10 runs
+  npm run psi -- <page> --runs <n>              mobile, n runs (1-${MAX_RUNS})
+  npm run psi -- <page> --desktop --runs <n>    desktop, n runs
 
 Options:
-  --reportId <id>        Re-filter a stored report instead of running PSI
-  --runs <n>              Number of PSI runs (1-${MAX_RUNS}, default 10)
-  --stat <mean|median|mode> Headline statistic (default median)
+  --desktop               Desktop performance (default is mobile)
+  --mobile                Mobile performance (the default)
+  --runs <n>              PSI runs per report (1-${MAX_RUNS}, default 10)
   --strategy <mobile|desktop>
-                          Lighthouse strategy (default mobile)
+                          Same choice as --mobile / --desktop
+  --reportId <id>        Re-filter a stored report instead of running PSI
+  --stat <mean|median|mode> Headline statistic (default median)
   --group <list>          Comma separated: opportunity,diagnostic,passed,informative
   --minSavingsMs <n>      Only insights saving at least n ms
   --minSavingsBytes <n>   Only insights saving at least n bytes
@@ -144,7 +153,10 @@ Options:
   -h, --help              This message
 
 Examples:
-  npm run psi -- https://example.com --runs 10
+  npm run psi -- https://example.com
+  npm run psi -- https://example.com --desktop
+  npm run psi -- https://example.com --runs 5
+  npm run psi -- https://example.com --desktop --runs 15
   npm run psi -- https://example.com --group opportunity,diagnostic --maxScore 0.9
   npm run psi -- --reportId 2026-09-29T10-30-00Z-mobile --metric lcp
   npm run psi -- --reportId 2026-09-29T10-30-00Z-mobile --items image-delivery-insight
@@ -215,7 +227,16 @@ export function parseArgs(argv: string[]): CliOptions | null {
   const positional: string[] = [];
   let reportId: string | undefined;
   let strategy: (typeof STRATEGIES)[number] = 'mobile';
+  let strategyChosen = false;
   let runs = 10;
+
+  const chooseStrategy = (value: (typeof STRATEGIES)[number], flag: string): void => {
+    if (strategyChosen && strategy !== value) {
+      fail(`${flag} conflicts with an earlier mobile/desktop choice`);
+    }
+    strategy = value;
+    strategyChosen = true;
+  };
   let stat: (typeof STATS)[number] = 'median';
   let group: FilterGroup[] | undefined;
   let metric: MetricKey[] | undefined;
@@ -248,12 +269,18 @@ export function parseArgs(argv: string[]): CliOptions | null {
         i += 1;
         break;
       }
+      case '--desktop':
+        chooseStrategy('desktop', arg);
+        break;
+      case '--mobile':
+        chooseStrategy('mobile', arg);
+        break;
       case '--strategy': {
         const value = takeValue(argv, i, arg);
         if (!(STRATEGIES as readonly string[]).includes(value)) {
           fail(`--strategy must be one of ${STRATEGIES.join(', ')}`);
         }
-        strategy = value as (typeof STRATEGIES)[number];
+        chooseStrategy(value as (typeof STRATEGIES)[number], arg);
         i += 1;
         break;
       }

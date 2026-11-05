@@ -250,4 +250,38 @@ describe('cli flags', () => {
       metric: ['lcp'],
     });
   });
+
+  it('defaults a page link to mobile and 10 runs', () => {
+    expect(parseArgs(['https://example.com/courses/'])).toMatchObject({
+      url: 'https://example.com/courses/',
+      strategy: 'mobile',
+      runs: 10,
+    });
+  });
+
+  it('measures desktop when --desktop is passed, still at 10 runs', () => {
+    expect(parseArgs(['https://example.com/courses/', '--desktop'])).toMatchObject({
+      strategy: 'desktop',
+      runs: 10,
+    });
+    expect(parseArgs(['https://example.com/courses/', '--strategy', 'desktop'])).toMatchObject({
+      strategy: 'desktop',
+      runs: 10,
+    });
+  });
+
+  it('lets the caller set how many PSI runs go into the report', () => {
+    expect(parseArgs(['https://example.com/courses/', '--runs', '4'])).toMatchObject({
+      strategy: 'mobile',
+      runs: 4,
+    });
+    expect(parseArgs(['https://example.com/courses/', '--desktop', '--runs', '15'])).toMatchObject({
+      strategy: 'desktop',
+      runs: 15,
+    });
+    expect(parseArgs(['https://example.com/courses/', '--mobile', '--runs', '1'])).toMatchObject({
+      strategy: 'mobile',
+      runs: 1,
+    });
+  });
 });
