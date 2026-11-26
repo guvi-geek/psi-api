@@ -185,6 +185,22 @@ describe('filters in the page URL', () => {
     expect(filters.sortBy).toBe('savingsMs');
     expect(filters.maxScore).toBeUndefined();
   });
+
+  it('drops numbers outside what the server accepts, instead of erroring', () => {
+    const filters = filtersFromParams(
+      new URLSearchParams('minFirstPartyRatio=2&maxScore=-0.1&limit=1.5&minSavingsMs=-5&minSavingsBytes=100'),
+    );
+    expect(filters.minFirstPartyRatio).toBeUndefined();
+    expect(filters.maxScore).toBeUndefined();
+    expect(filters.limit).toBeUndefined();
+    expect(filters.minSavingsMs).toBeUndefined();
+    expect(filters.minSavingsBytes).toBe(100);
+    expect(filtersFromParams(new URLSearchParams('minFirstPartyRatio=1&maxScore=0&limit=0'))).toMatchObject({
+      minFirstPartyRatio: 1,
+      maxScore: 0,
+      limit: 0,
+    });
+  });
 });
 
 describe('findingRow', () => {

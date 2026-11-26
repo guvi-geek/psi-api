@@ -26,7 +26,7 @@ import { JsonView } from './json-view';
 import { RequestsView } from './requests-view';
 import { WorkQueueView } from './workqueue-view';
 import { href } from './router';
-import { formatWhen } from './run';
+import { formatWhen, measuredAt } from './run';
 
 interface Loaded {
   report: AggregatedReport;
@@ -132,7 +132,7 @@ export function ReportView(props: { reportId: string; params: URLSearchParams; o
 }
 
 function ReportHeader({ report, onSaved }: { report: AggregatedReport; onSaved: () => void }) {
-  const generated = new Date(report.generatedAt);
+  const measured = measuredAt(report.reportId, report.generatedAt);
   const { data } = useApi<{ reports: ReportRow[] }>('/reports');
   const previous = previousOf(data?.reports ?? [], report.reportId);
   const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
@@ -144,8 +144,8 @@ function ReportHeader({ report, onSaved }: { report: AggregatedReport; onSaved: 
           <p className="report-sub">
             {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, {lighthouseLabel(report.lighthouseVersion)},{' '}
             {report.stat} of {report.runsSucceeded}/{report.runsRequested} runs,{' '}
-            <time dateTime={report.generatedAt} title={generated.toLocaleString()}>
-              {formatWhen(report.generatedAt)}
+            <time dateTime={measured} title={new Date(measured).toLocaleString()}>
+              {formatWhen(measured)}
             </time>
           </p>
         </div>
@@ -438,7 +438,11 @@ function MeasurementBlock({ report, failed }: { report: AggregatedReport; failed
           </dd>
         </div>
         <div>
-          <dt>Saved</dt>
+          <dt>Measured</dt>
+          <dd>{new Date(measuredAt(report.reportId, report.generatedAt)).toLocaleString()}</dd>
+        </div>
+        <div>
+          <dt>Report built</dt>
           <dd>{new Date(report.generatedAt).toLocaleString()}</dd>
         </div>
         <div>

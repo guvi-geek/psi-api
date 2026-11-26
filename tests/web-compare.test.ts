@@ -13,6 +13,7 @@ import { compareReports } from '../src/compare.js';
 import type { ReanalyzeDelta } from '../src/reanalyze.js';
 import {
   changeText,
+  idsToSave,
   compareCli,
   compareQuery,
   compareSides,
@@ -168,6 +169,11 @@ describe('picking reports', () => {
   it('reads well in a picker', () => {
     expect(reportOption(reports[0]!)).toBe('site.test/, mobile, 2026-11-26 12:00, score 92');
   });
+
+  it('shows when a report was measured, not when it was last rebuilt', () => {
+    const rebuilt = row({ reportId: '2026-11-20T08-15-00Z-mobile', generatedAt: '2026-11-26T12:00:00.000Z' });
+    expect(reportOption(rebuilt)).toBe('site.test/, mobile, 2026-11-20 08:15, score 92');
+  });
 });
 
 describe('re-analyze', () => {
@@ -194,6 +200,16 @@ describe('re-analyze', () => {
       { tone: 'warn', text: 'Corrected bootup-time: claimed a 0ms saving that Lighthouse never gave an estimate for' },
       { tone: 'bad', text: 'Now failing: LCP, TBT' },
     ]);
+  });
+
+  it('saves only the reports the preview found changed', () => {
+    expect(
+      idsToSave([
+        { reportId: 'changed', delta, saved: false },
+        { reportId: 'same', delta: { ...delta, changed: false }, saved: false },
+        { reportId: 'broken', delta: null, error: 'no stored runs', saved: false },
+      ]),
+    ).toEqual(['changed']);
   });
 
   it('adds up a sweep like the CLI header', () => {

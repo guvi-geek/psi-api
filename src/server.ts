@@ -574,6 +574,14 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   // The CLI's --reanalyze. Free: rebuilds from runs.json, never calls PSI.
   app.post('/reanalyze', async (req, reply) => {
+    // It rewrites files, so it takes only a JSON body. A JSON request needs a CORS
+    // preflight, which this server never grants, so another site open in the
+    // browser cannot send one. A body-less or text/plain POST can, so it is refused.
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return reply.status(415).send({
+        error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'send a JSON body, e.g. {"save": false}' },
+      });
+    }
     const body = reanalyzeBody.parse((req.body ?? {}) as object);
     if (body.reportId && !(await loadReport(body.reportId))) {
       return reply.status(404).send(notFound(body.reportId));

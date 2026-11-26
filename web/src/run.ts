@@ -188,6 +188,17 @@ export function pathOf(url: string): string {
   }
 }
 
+/**
+ * When a report was measured, read from its id (2026-11-23T13-13-24Z-mobile).
+ * Not `generatedAt`: a re-analysis rewrites that, but keeps the id.
+ */
+export function measuredAt(reportId: string, fallback: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z/.exec(reportId);
+  if (!match) return fallback;
+  const iso = `${match[1]}T${match[2]}:${match[3]}:${match[4]}Z`;
+  return Number.isFinite(Date.parse(iso)) ? iso : fallback;
+}
+
 /** "Just now", "12 min ago", "3 h ago", then a date. */
 export function formatWhen(iso: string, now = Date.now()): string {
   const then = Date.parse(iso);

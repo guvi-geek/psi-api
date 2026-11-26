@@ -177,6 +177,22 @@ describe('POST /reanalyze', () => {
     expect((await loadReport(AFTER_ID, dir))!.reportId).toBe(AFTER_ID);
   });
 
+  it('refuses a POST that is not JSON, which another site could send', async () => {
+    const file = path.join(dir, 'example.com', BEFORE_ID, 'report.json');
+    const original = await readFile(file, 'utf8');
+    const bare = await app.inject({ method: 'POST', url: '/reanalyze' });
+    expect(bare.statusCode).toBe(415);
+    expect(bare.json().error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+    const text = await app.inject({
+      method: 'POST',
+      url: '/reanalyze',
+      headers: { 'content-type': 'text/plain' },
+      payload: '{"save":true}',
+    });
+    expect(text.statusCode).toBe(415);
+    expect(await readFile(file, 'utf8')).toBe(original);
+  });
+
   it('404s for an unknown report', async () => {
     const response = await app.inject({
       method: 'POST',

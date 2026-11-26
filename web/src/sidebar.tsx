@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { href } from './router';
-import { formatWhen, groupReports, pathOf, scoreBand, type ReportRow } from './run';
+import { formatWhen, groupReports, measuredAt, pathOf, scoreBand, type ReportRow } from './run';
 import { useApi } from './use-api';
 
 /** The CLI's --list: stored reports by host, newest first. Reading them costs no quota. */
@@ -70,7 +70,7 @@ function ReportLink({ report, active }: { report: ReportRow; active: boolean }) 
       <span className="report-main">
         <span className="report-path">{pathOf(report.url)}</span>
         <span className="report-meta">
-          {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, {formatWhen(report.generatedAt)}
+          {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, {formatWhen(measuredAt(report.reportId, report.generatedAt))}
           {partial ? `, ${report.runsSucceeded}/${report.runsRequested} runs` : ''}
         </span>
       </span>

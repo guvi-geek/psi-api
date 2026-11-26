@@ -11,14 +11,28 @@ export type Route =
   | { name: 'compare'; before?: string; after?: string; metric?: string }
   | { name: 'missing'; path: string };
 
+function decode(part: string): string | null {
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return null;
+  }
+}
+
 export function parseRoute(hash: string): Route {
   const raw = hash.replace(/^#/, '') || '/';
   const [path = '/', query = ''] = raw.split('?');
   const params = new URLSearchParams(query);
   const parts = path.split('/').filter(Boolean);
   if (parts.length === 0) return { name: 'home' };
-  if (parts[0] === 'report' && parts[1]) return { name: 'report', reportId: decodeURIComponent(parts[1]), params };
-  if (parts[0] === 'run' && parts[1]) return { name: 'run', jobId: decodeURIComponent(parts[1]) };
+  if (parts[0] === 'report' && parts[1]) {
+    const reportId = decode(parts[1]);
+    return reportId ? { name: 'report', reportId, params } : { name: 'missing', path };
+  }
+  if (parts[0] === 'run' && parts[1]) {
+    const jobId = decode(parts[1]);
+    return jobId ? { name: 'run', jobId } : { name: 'missing', path };
+  }
   if (parts[0] === 'compare') {
     return {
       name: 'compare',

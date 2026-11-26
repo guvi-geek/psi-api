@@ -50,6 +50,14 @@ export const DEFAULT_FILTERS: Filters = {
 
 const NUMBER_KEYS = ['minSavingsMs', 'minSavingsBytes', 'maxScore', 'minFirstPartyRatio', 'limit'] as const;
 
+/** The ranges the server accepts: ratios and scores in 0–1, a whole-number limit, no negatives. */
+function numberAllowed(key: (typeof NUMBER_KEYS)[number], value: number): boolean {
+  if (!Number.isFinite(value) || value < 0) return false;
+  if (key === 'minFirstPartyRatio' || key === 'maxScore') return value <= 1;
+  if (key === 'limit') return Number.isInteger(value);
+  return true;
+}
+
 const list = (value: string | null) =>
   (value ?? '')
     .split(',')
@@ -66,7 +74,7 @@ export function filtersFromParams(params: URLSearchParams): Filters {
   for (const key of NUMBER_KEYS) {
     const raw = params.get(key);
     const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
-    if (Number.isFinite(value)) filters[key] = value;
+    if (numberAllowed(key, value)) filters[key] = value;
   }
   const items = params.get('items');
   if (items === 'with') filters.hasItems = true;

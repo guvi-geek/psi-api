@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { api, ApiError } from './api';
-import { reanalyzeLines, reanalyzeSummary, type ReanalyzeRow } from './compare';
+import { idsToSave, reanalyzeLines, reanalyzeSummary, type ReanalyzeRow } from './compare';
 import { CopyButton } from './copy-button';
 import { href } from './router';
 
@@ -18,15 +18,26 @@ export function ReanalyzeBox({ reportId, onSaved }: { reportId?: string; onSaved
   const [error, setError] = useState<string | null>(null);
   const scope = reportId ? 'this report' : 'every saved report';
 
+  async function post(body: object): Promise<ReanalyzeRow[]> {
+    const result = await api<{ reanalyzed: ReanalyzeRow[] }>('/reanalyze', { method: 'POST', body: JSON.stringify(body) });
+    return result.reanalyzed;
+  }
+
   async function run(save: boolean) {
     setError(null);
     setPhase(save ? 'saving' : 'previewing');
     try {
-      const body = await api<{ reanalyzed: ReanalyzeRow[] }>('/reanalyze', {
-        method: 'POST',
-        body: JSON.stringify(reportId ? { reportId, save } : { save }),
-      });
-      setRows(body.reanalyzed);
+      let next: ReanalyzeRow[];
+      if (!save) {
+        next = await post(reportId ? { reportId, save: false } : { save: false });
+      } else {
+        // Only the reports the preview found changed are rewritten. The CLI's
+        // bare --reanalyze rewrites them all, which would re-stamp unchanged ones.
+        const changed = idsToSave(rows);
+        next = [];
+        for (const id of changed) next.push(...(await post({ reportId: id, save: true })));
+      }
+      setRows(next);
       setPhase(save ? 'saved' : 'previewed');
       if (save) onSaved();
     } catch (caught) {
@@ -37,7 +48,8 @@ export function ReanalyzeBox({ reportId, onSaved }: { reportId?: string; onSaved
 
   const summary = reanalyzeSummary(rows);
   const interesting = rows.filter((row) => row.delta?.changed || row.error);
-  const cli = `npm run psi -- --reanalyze${reportId ? ` --reportId ${reportId}` : ''}`;
+  // The command for the check: --no-save writes nothing, like the button.
+  const cli = `npm run psi -- --reanalyze${reportId ? ` --reportId ${reportId}` : ''} --no-save`;
 
   return (
     <div className="reanalyze">
@@ -97,7 +109,8 @@ export function ReanalyzeBox({ reportId, onSaved }: { reportId?: string; onSaved
 
           {phase === 'saved' ? (
             <p className="text-good">
-              {summary.saved} report{summary.saved === 1 ? '' : 's'} rewritten. Saved runs were left untouched.
+              {summary.saved} changed report{summary.saved === 1 ? '' : 's'} rewritten. Unchanged reports and saved runs
+              were left untouched.
             </p>
           ) : (
             summary.changed > 0 && (

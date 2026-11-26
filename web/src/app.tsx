@@ -109,7 +109,7 @@ function Shell({ route }: { route?: Route }) {
         {route?.name === 'home' && <Home onChanged={refreshReports} />}
         {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
         {route?.name === 'report' && (
-          <ReportView reportId={route.reportId} params={route.params} onChanged={refreshReports} />
+          <ReportView key={route.reportId} reportId={route.reportId} params={route.params} onChanged={refreshReports} />
         )}
         {route?.name === 'compare' && (
           <CompareView before={route.before} after={route.after} metric={route.metric} version={reportsVersion} />

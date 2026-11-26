@@ -2,11 +2,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api, ApiError } from '../web/src/api.js';
 import { validateTargetUrl } from '../src/psiClient.js';
+import { parseRoute } from '../web/src/router.js';
 import {
   columnsOf,
   formatElapsed,
   formatWhen,
   groupReports,
+  measuredAt,
   isPrivateHost,
   normalizeUrl,
   parseRuns,
@@ -143,6 +145,29 @@ describe('groupReports', () => {
     expect(groupReports(reports, 'B.COM').map((group) => group.host)).toEqual(['b.com']);
     expect(groupReports(reports, 'desktop')[0]!.reports.map((report) => report.reportId)).toEqual(['a']);
     expect(groupReports(reports, 'nothing-matches')).toEqual([]);
+  });
+});
+
+describe('measuredAt', () => {
+  it('reads the measurement time from the report id, which a re-analysis keeps', () => {
+    expect(measuredAt('2026-11-23T13-13-24Z-mobile', '2026-11-26T08:00:00.000Z')).toBe('2026-11-23T13:13:24Z');
+    expect(measuredAt('2026-11-26T06-34-05Z-desktop', 'x')).toBe('2026-11-26T06:34:05Z');
+  });
+
+  it('falls back to generatedAt for an id it cannot read', () => {
+    expect(measuredAt('custom-id', '2026-11-26T08:00:00.000Z')).toBe('2026-11-26T08:00:00.000Z');
+    expect(measuredAt('2026-13-45T99-99-99Z-mobile', 'fallback')).toBe('fallback');
+  });
+});
+
+describe('parseRoute', () => {
+  it('shows not found for a malformed escape instead of throwing', () => {
+    expect(parseRoute('#/report/%E0')).toEqual({ name: 'missing', path: '/report/%E0' });
+    expect(parseRoute('#/run/%')).toEqual({ name: 'missing', path: '/run/%' });
+    expect(parseRoute('#/report/2026-11-23T13-13-24Z-mobile')).toMatchObject({
+      name: 'report',
+      reportId: '2026-11-23T13-13-24Z-mobile',
+    });
   });
 });
 

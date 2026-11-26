@@ -7,7 +7,7 @@ import type { CompareResult } from '../../src/compare';
 import type { ReanalyzeDelta } from '../../src/reanalyze';
 import { formatBytes, metricValue } from '../../src/render';
 import { METRIC_NAMES, METRIC_SHORT } from './overview';
-import type { ReportRow } from './run';
+import { measuredAt, type ReportRow } from './run';
 
 /** The metrics --compare --metric accepts. The score is not one of them. */
 export const COMPARE_METRICS = ['lcp', 'fcp', 'tbt', 'cls', 'speedIndex', 'tti', 'ttfb', 'inp'] as const;
@@ -88,7 +88,7 @@ export function metricLabel(metric: string): string {
 
 /** How a report reads in a picker: page, device, when, score. */
 export function reportOption(report: ReportRow): string {
-  const when = report.generatedAt.slice(0, 16).replace('T', ' ');
+  const when = measuredAt(report.reportId, report.generatedAt).slice(0, 16).replace('T', ' ');
   return `${report.url.replace(/^https?:\/\//, '')}, ${report.strategy}, ${when}, score ${Math.round(report.score)}`;
 }
 
@@ -120,6 +120,14 @@ export interface ReanalyzeRow {
   delta: ReanalyzeDelta | null;
   error?: string;
   saved: boolean;
+}
+
+/**
+ * The reports a save should rewrite: those the preview found changed. The
+ * CLI's bare --reanalyze rewrites every report, which re-stamps unchanged ones.
+ */
+export function idsToSave(rows: ReanalyzeRow[]): string[] {
+  return rows.filter((row) => row.delta?.changed && !row.error).map((row) => row.reportId);
 }
 
 /** The CLI's RE-ANALYZED header numbers. */
