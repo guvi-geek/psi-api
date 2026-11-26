@@ -171,6 +171,9 @@ npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
 | `--noFlaky` | — | Hide insights seen in <30% of runs. |
 | `--json` | off | Machine-readable output, and a **superset** of the text view — see [What the text view does not show](#what-the-text-view-does-not-show). |
 | `--no-save` | off | Don't write to `data/`. |
+| `--seo` | off | Check the page's SEO with one PSI call. See [SEO check](#seo-check). |
+| `--seoId <id>` | — | Re-read a **saved** SEO check. Costs no quota and runs no PSI calls. |
+| `--seoList` | off | List saved SEO checks, newest first. |
 
 ```bash
 npm run psi -- https://example.com
@@ -367,6 +370,41 @@ It reports two different corrections separately. A **recovered** figure is a rea
 A rebuild only ever *fills in* a missing savings figure. A figure Lighthouse already supplied is never overwritten, because it may have come from a rollup that does not survive normalization and cannot be reconstructed — replacing a precise number with a row-derived approximation would be a downgrade. `runs.json` is left untouched so a rebuild can always be redone.
 
 Exit code is `0` on success, `1` on error — so `npm run --silent psi -- <url> --runs 3 || echo "failed"` works in a script.
+
+### SEO check
+
+`--seo` checks one page's SEO. It makes **one** PSI call with `category=seo`, separate from the performance runs, and it does not touch any performance report or its numbers. One call is enough because SEO audits read the page's HTML, links, `robots.txt` and headers. Those don't vary from run to run the way timings do.
+
+```bash
+npm run psi -- https://example.com --seo                   # mobile, 1 PSI call
+npm run psi -- https://example.com --seo --desktop         # desktop
+npm run psi -- https://example.com --seo --no-save         # check, don't write to data/
+npm run psi -- https://example.com --seo --json            # the whole check as JSON
+
+# re-read a saved check - free, no PSI calls
+npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo
+npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo --json
+
+# list saved checks, newest first
+npm run psi -- --seoList
+npm run psi -- --seoList --json                            # { "checks": [...] }
+```
+
+`--seo` honours `--desktop`, `--mobile`, `--strategy`, `--no-save` and `--json`, and saves by default. `--seoId` and `--seoList` read from `data/` and take `--json`. The three modes can't be combined with each other, or with `--reportId`, `--list`, `--compare`, `--reanalyze`, `--diagnose`, `--requests`, `--items` or the insight filters.
+
+The text view starts with a header (page, device, Lighthouse version, when it was measured) and a SCORE line, 0–100, with the counts of failed, passed, manual and not-applicable audits. The sections follow in the order the PSI website uses:
+
+1. Audits that could not run, if any.
+2. Failed audits, under their group (for example "Crawling and Indexing" or "Content Best Practices"), each with its detail rows.
+3. "Additional items to manually check": audits Lighthouse can't decide and you must check yourself. They have no pass/fail score.
+4. "Passed audits".
+5. "Not applicable".
+
+`--seoList` prints the id, page, device, score and number of failed audits of each saved check. `--seo --json` and `--seoId --json` return the full check: score, audits (each `failed`, `passed`, `manual`, `notApplicable` or `error`), groups, counts and detail tables.
+
+A check is saved as `data/<host>/seo/<seoId>.json`. `<seoId>` is `<ISO timestamp>-<strategy>-seo`, for example `2026-11-26T10-00-00Z-mobile-seo`. It is kept apart from performance reports, so it never appears among them.
+
+This is the SEO category only. It is not Accessibility or Best Practices.
 
 ---
 
@@ -721,6 +759,15 @@ data/
 
 `<reportId>` is `<ISO timestamp>-<strategy>`, which sorts chronologically. `data/` and `.env` are gitignored.
 
+[SEO checks](#seo-check) are stored beside the reports, in a `seo/` folder of the same host directory:
+
+```
+data/
+  www.guvi.co/
+    seo/
+      2026-11-26T10-00-00Z-mobile-seo.json
+```
+
 `report.json` is a snapshot of whatever the aggregation rules produced on the day it was written, so improving those rules does nothing for history. `runs.json` keeps the per-run detail — metrics, insights, items, display strings — which is what `--reanalyze` rebuilds from at no quota cost, and what nothing else reads (see [`runs.json`: per-run detail](#runsjson-per-run-detail)). A rebuild **only fills in** a missing savings figure: one that Lighthouse already supplied is never overwritten, because it may have come from a rollup that does not survive normalization and cannot be reconstructed. `runs.json` is never rewritten, so a rebuild can always be redone.
 
 A host directory may also hold an `optimization-log.md`, the append-only per-host record an optimizing agent maintains — see [AGENT_GUIDE.md](./AGENT_GUIDE.md) Step 10. The tool never creates or reads it.
@@ -868,6 +915,41 @@ curl -X POST http://127.0.0.1:3939/insights \
         "strategy": "mobile",
         "filters": { "group": ["opportunity", "diagnostic"], "maxScore": 0.9, "sortBy": "savingsMs", "limit": 5 }
       }'
+```
+
+### `POST /seo`
+
+Checks one page's SEO: [the same check as `--seo`](#seo-check). It runs PSI once with `category=seo`, so it **costs 1 quota unit** and takes about 15 seconds. It is synchronous, with no `async` option. The body must be JSON (`content-type: application/json`), or the server answers `415`. The URL is validated, and PSI errors are mapped, exactly as in `POST /report`.
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `url` | *required* | An `http`/`https` page. Validated as in `POST /report`: a private address is only warned about, and PSI can't reach it. |
+| `strategy` | `mobile` | `mobile` or `desktop`. |
+| `save` | `true` | `false` returns the check without writing it to `data/`. |
+
+```bash
+curl -X POST http://127.0.0.1:3939/seo \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com","strategy":"mobile"}'
+# -> {"check":{ "seoId":"2026-11-26T10-00-00Z-mobile-seo", "score":92, ... },"saved":true}
+```
+
+The response is `200 { "check": SeoCheck, "saved": boolean }`. A failed PSI call is `502` with code `INSUFFICIENT_RUNS` ("Only 0 of 1 PSI runs succeeded", followed by PSI's own message), the same answer `POST /report` gives for a one-run report.
+
+### `GET /seo/:seoId`
+
+Re-reads a saved SEO check. No quota cost. A malformed id is `400`; an id that isn't stored is `404`.
+
+```bash
+curl http://127.0.0.1:3939/seo/2026-11-26T10-00-00Z-mobile-seo
+```
+
+### `GET /seo?url=&strategy=`
+
+Lists saved SEO checks, newest first, as `{ "checks": [...] }`. Each entry has `seoId`, `host`, `url`, `strategy`, `fetchedAt`, `score` and `counts`. Both filters are optional: `url` is the exact page, `strategy` is `mobile` or `desktop`. No quota cost.
+
+```bash
+curl "http://127.0.0.1:3939/seo?url=https://example.com&strategy=mobile"
 ```
 
 ### `GET /health`
