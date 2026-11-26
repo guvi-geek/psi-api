@@ -24,8 +24,10 @@ import { filterInsights } from './insights.js';
 import { diagnose } from './diagnose.js';
 import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
-import { UrlValidationError } from './psiClient.js';
+import { UrlValidationError, validateTargetUrl } from './psiClient.js';
 import { getDataDir, listReports, loadReport, loadRuns, saveReport } from './storage.js';
+import { isSeoId, runSeoCheck, type SeoCheck } from './seo.js';
+import { listSeoChecks, loadSeoCheck, saveSeoCheck } from './seo-storage.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { loadTargets } from './targets.js';
 import { assessMeasurement } from './validity.js';
@@ -404,6 +406,24 @@ const notFound = (reportId: string) => ({
   error: { code: 'NOT_FOUND', message: `no stored report "${reportId}"` },
 });
 
+/* ------------------------------------ seo ----------------------------------- */
+
+const seoBody = z.object({
+  url: z.string().min(1),
+  strategy: z.enum(STRATEGIES).default('mobile'),
+  /** false = do not write the check to data/. */
+  save: boolish.default(true),
+});
+
+const seoIdParams = z.object({
+  seoId: z.string().refine(isSeoId, 'not an SEO check id (expected <iso time>-<mobile|desktop>-seo)'),
+});
+
+const seoListQuery = z.object({
+  url: z.string().optional(),
+  strategy: z.enum(STRATEGIES).optional(),
+});
+
 export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
@@ -571,6 +591,64 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
 
   // The budgets every verdict is graded against. Read-only.
   app.get('/targets', async () => loadTargets());
+
+  // The SEO check: one PSI call with category=seo, stored under data/<host>/seo/,
+  // never read by the report routes. Synchronous: the request waits for PSI.
+  app.post('/seo', async (req, reply) => {
+    // It spends quota, so it takes only a JSON body, for the same reason as /reanalyze:
+    // a cross-site page can send a body-less or text/plain POST, never a JSON one.
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return reply.status(415).send({
+        error: {
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+          message: 'send a JSON body, e.g. {"url": "https://example.com/"}',
+        },
+      });
+    }
+    const body = seoBody.parse((req.body ?? {}) as object);
+    // Same validation /report runs: bad URLs are a 400 before any quota is spent,
+    // private hosts are only warned about.
+    const { url, warnings } = validateTargetUrl(body.url);
+    for (const warning of warnings) req.log.warn(warning);
+
+    let check: SeoCheck;
+    try {
+      check = await runSeoCheck({
+        url,
+        strategy: body.strategy,
+        apiKey: process.env.PSI_API_KEY,
+        fetchImpl: options.fetchImpl,
+        sleepImpl: options.sleepImpl,
+        onRetry: ({ reason, attempt, maxAttempts, delayMs }) => {
+          req.log.warn({ reason, attempt, maxAttempts, delayMs }, 'psi retry');
+        },
+      });
+    } catch (error) {
+      // /report turns a failed PSI call into InsufficientRunsError (502). One call
+      // here is one run, so the same failure gets the same status and body.
+      const message = error instanceof Error ? error.message : String(error);
+      throw new InsufficientRunsError(0, 1, [{ run: 1, message }]);
+    }
+    if (body.save) await saveSeoCheck(check);
+    return reply.send({ check, saved: body.save });
+  });
+
+  app.get<{ Params: { seoId: string } }>('/seo/:seoId', async (req, reply) => {
+    const { seoId } = seoIdParams.parse(req.params);
+    const check = await loadSeoCheck(seoId);
+    if (!check) {
+      return reply
+        .status(404)
+        .send({ error: { code: 'NOT_FOUND', message: `no stored SEO check "${seoId}"` } });
+    }
+    return reply.send(check);
+  });
+
+  // Saved checks, newest first. Free: reads data/ only.
+  app.get('/seo', async (req) => {
+    const query = seoListQuery.parse(compact(req.query));
+    return { checks: await listSeoChecks({ url: query.url || undefined, strategy: query.strategy }) };
+  });
 
   registerWebUi(app, options.webDir ?? DEFAULT_WEB_DIR);
 
