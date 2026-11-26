@@ -6,32 +6,28 @@ import { assessMeasurement } from '../src/validity.js';
 import { RUN_SPINNER, parseArgs, renderRunGrid, type RunSlot } from '../src/cli.js';
 import type { AggregatedReport, MetricKey, NetworkRequest, NormalizedReport, SeriesStats } from '../src/types.js';
 
-function series(p75: number, stddev = 100): SeriesStats {
+function series(value: number, range = 0): SeriesStats {
   return {
-    mean: p75,
-    median: p75,
-    mode: p75,
-    min: p75,
-    max: p75,
-    stddev,
+    mean: value,
+    median: value,
+    mode: value,
+    min: value - range,
+    max: value,
     count: 10,
     values: [],
-    p25: p75,
-    p75,
-    p95: p75,
   };
 }
 
 function report(options: {
   id: string;
   lcp: number;
-  stddev?: number;
+  range?: number;
   meets?: boolean;
   passRate?: number;
   bimodal?: boolean;
   requests?: NetworkRequest[];
 }): AggregatedReport {
-  const lcp = series(options.lcp, options.stddev ?? 100);
+  const lcp = series(options.lcp, options.range ?? 100);
   return {
     reportId: options.id,
     url: 'https://site.test/page',
@@ -80,46 +76,47 @@ const doc = (status: number, url = 'https://site.test/page'): NetworkRequest => 
 });
 
 describe('compareReports', () => {
-  it('keeps a p75 move larger than the baseline spread', () => {
+  it('keeps a worst-run move larger than the baseline range', () => {
     const result = compareReports(
-      report({ id: 'before', lcp: 3000, stddev: 80, passRate: 0 }),
-      report({ id: 'after', lcp: 2200, stddev: 70, passRate: 0.4 }),
+      report({ id: 'before', lcp: 3000, range: 80, passRate: 0 }),
+      report({ id: 'after', lcp: 2200, range: 70, passRate: 0.4 }),
       'lcp',
     );
     expect(result.verdict).toBe('KEEP');
-    expect(result.p75Delta).toBe(800);
+    expect(result.tailDelta).toBe(800);
+    expect(result.before).toMatchObject({ min: 2920, max: 3000, tail: 3000 });
   });
 
   it('reverts a flat miss and an inconclusive nudge inside the noise', () => {
     expect(
       compareReports(
-        report({ id: 'before', lcp: 3000, stddev: 200 }),
-        report({ id: 'after', lcp: 3000, stddev: 200 }),
+        report({ id: 'before', lcp: 3000, range: 200 }),
+        report({ id: 'after', lcp: 3000, range: 200 }),
         'lcp',
       ).verdict,
     ).toBe('REVERT');
     expect(
       compareReports(
-        report({ id: 'before', lcp: 3000, stddev: 200, meets: false }),
-        report({ id: 'after', lcp: 2900, stddev: 200, meets: false }),
+        report({ id: 'before', lcp: 3000, range: 200, meets: false }),
+        report({ id: 'after', lcp: 2900, range: 200, meets: false }),
         'lcp',
       ).verdict,
     ).toBe('INCONCLUSIVE');
   });
 
-  it('keeps a pass-rate recovery that does not move p75', () => {
+  it('keeps a pass-rate recovery that does not move the worst run', () => {
     const result = compareReports(
-      report({ id: 'before', lcp: 2400, stddev: 50, meets: false, passRate: 0.4 }),
-      report({ id: 'after', lcp: 2400, stddev: 50, meets: true, passRate: 0.9 }),
+      report({ id: 'before', lcp: 2400, range: 50, meets: false, passRate: 0.4 }),
+      report({ id: 'after', lcp: 2400, range: 50, meets: true, passRate: 0.9 }),
       'lcp',
     );
     expect(result.verdict).toBe('KEEP');
   });
 
-  it('does not treat a bimodal metric stddev as a noise band', () => {
+  it('does not treat a bimodal metric range as a noise band', () => {
     const result = compareReports(
-      report({ id: 'before', lcp: 3000, stddev: 400, bimodal: true }),
-      report({ id: 'after', lcp: 2000, stddev: 400, bimodal: true }),
+      report({ id: 'before', lcp: 3000, range: 400, bimodal: true }),
+      report({ id: 'after', lcp: 2000, range: 400, bimodal: true }),
       'lcp',
     );
     expect(result.verdict).toBe('INCONCLUSIVE');
@@ -222,7 +219,8 @@ describe('failing metric readout', () => {
 
   it('says when CrUX is empty, and stays quiet on a passing metric', () => {
     const failing = report({ id: 'a', lcp: 3000, meets: false });
-    expect(failingMetricReadout(failing, 'lcp')).toMatch(/p75 3000ms/);
+    // The lab percentile and stddev lines are gone; the CrUX field p75 stays.
+    expect(failingMetricReadout(failing, 'lcp')).not.toMatch(/p75 3000ms|stddev/);
     expect(failingMetricReadout(failing, 'lcp')).toMatch(/CrUX is empty/);
     const passing = report({ id: 'a', lcp: 2000, meets: true });
     expect(failingMetricReadout(passing, 'lcp')).toBeUndefined();

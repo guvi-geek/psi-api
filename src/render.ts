@@ -560,29 +560,15 @@ export function medianOverTarget(gap: { delta: number } | undefined): boolean {
   return gap !== undefined && gap.delta > 0;
 }
 
-/** `min`, `max` and the interquartile range, skipping whatever is not recorded. */
+/** The observed range, skipping a report that recorded no min and max. */
 export function spreadLine(stats: {
-  median: number;
   min?: number;
   max?: number;
-  p25?: number;
-  p75?: number;
-  p95?: number;
-  stddev?: number;
   metric?: string;
 }): string {
   const metric = stats.metric ?? 'score';
-  const parts: string[] = [];
-  if (stats.p25 !== undefined && stats.p75 !== undefined) {
-    parts.push(`p25 ${metricValue(metric, stats.p25)}`);
-    parts.push(`p75 ${metricValue(metric, stats.p75)}`);
-  }
-  if (stats.p95 !== undefined) parts.push(`p95 ${metricValue(metric, stats.p95)}`);
-  if (stats.min !== undefined && stats.max !== undefined) {
-    parts.push(`range ${metricValue(metric, stats.min)}–${metricValue(metric, stats.max)}`);
-  }
-  if (stats.stddev !== undefined) parts.push(`stddev ${stats.stddev.toFixed(1)}`);
-  return parts.join(' · ');
+  if (stats.min === undefined || stats.max === undefined) return '';
+  return `range ${metricValue(metric, stats.min)}–${metricValue(metric, stats.max)}`;
 }
 
 /* ------------------------------- environment -------------------------------- */

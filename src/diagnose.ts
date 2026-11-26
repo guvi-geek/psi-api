@@ -397,7 +397,7 @@ function cautionsFor(report: AggregatedReport, ranked: RankedInsight[]): string[
   // against genuine variance and needs more samples to judge.
   for (const metric of METRIC_KEYS) {
     const stats: SeriesStats | undefined = report.metrics[metric];
-    if (stats && stats.stddev === 0 && stats.count > 1) {
+    if (stats && stats.min === stats.max && stats.count > 1) {
       cautions.push(
         `${fmt(metric)} is identical across all ${stats.count} runs (${stats.median}). The page is pinned ` +
           'on this metric, so a change to it will not show up as score movement.',

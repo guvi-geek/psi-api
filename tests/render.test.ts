@@ -289,21 +289,12 @@ describe('passSeverity', () => {
 });
 
 describe('spreadLine', () => {
-  it('omits percentiles a stored report predates instead of printing undefined', () => {
-    // Old stored reports have no p25/p75/p95, and the previous renderer
-    // printed the literal text "undefined" for each.
-    const line = spreadLine({ median: 94, min: 84, max: 95, stddev: 3.4, metric: 'score' });
-    expect(line).not.toContain('undefined');
-    expect(line).toBe('range 84–95 · stddev 3.4');
-  });
-
-  it('includes the tail percentiles when they exist', () => {
-    const line = spreadLine({ median: 94, p25: 87.5, p75: 95.5, p95: 95.5, min: 84, max: 95.5, stddev: 3.4, metric: 'score' });
-    expect(line).toBe('p25 87.5 · p75 95.5 · p95 95.5 · range 84–95.5 · stddev 3.4');
+  it('prints only the observed range', () => {
+    expect(spreadLine({ min: 84, max: 95, metric: 'score' })).toBe('range 84–95');
   });
 
   it('is empty rather than wrong when it has nothing to say', () => {
-    expect(spreadLine({ median: 94, metric: 'lcp' })).toBe('');
+    expect(spreadLine({ metric: 'lcp' })).toBe('');
   });
 });
 

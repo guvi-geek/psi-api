@@ -1,6 +1,6 @@
 /**
- * The numbers a keep-or-revert decision needs, which the metric table otherwise
- * leaves in JSON.
+ * The field-data half of a keep-or-revert decision, which the metric table
+ * otherwise leaves in JSON.
  */
 
 import type { AggregatedReport, FieldData, MetricKey } from './types.js';
@@ -42,7 +42,7 @@ export function fieldDataPresent(fieldData: FieldData | null | undefined): boole
 }
 
 /**
- * One line under a failing metric: its own tail, whether it splits, and field p75.
+ * One line under a failing metric: whether it splits, and its field p75.
  *
  * Undefined when the metric is inside its target, so a passing row is unchanged.
  */
@@ -50,12 +50,7 @@ export function failingMetricReadout(report: AggregatedReport, metric: MetricKey
   const gap = report.targets.gaps.find((entry) => entry.metric === metric);
   if (!gap || gap.meets) return undefined;
 
-  const stats = report.metrics[metric];
   const parts: string[] = [];
-  if (stats) {
-    parts.push(`p75 ${formatReadout(metric, stats.p75)}`);
-    parts.push(`stddev ${formatReadout(metric, stats.stddev)}`);
-  }
   const split = report.distributions?.[metric];
   if (split?.bimodal && split.note) parts.push(split.note);
   if (!fieldDataPresent(report.fieldData)) {

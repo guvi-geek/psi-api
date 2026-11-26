@@ -1,8 +1,8 @@
 /**
  * The keep / revert / inconclusive call an agent otherwise computes by hand.
  *
- * Judged on the metric that was changed, against that metric's own spread.
- * The score's stddev is a band built from every metric at once, and using it
+ * Judged on the metric that was changed, against that metric's own range.
+ * The score's range is built from every metric at once, and using it
  * for an LCP change asks for a margin the LCP may be unable to show.
  */
 
@@ -21,14 +21,23 @@ export interface RequestDiff {
   thirdPartyLeft: string[];
 }
 
+/** One side of a comparison, reduced to the observed range. */
+export interface CompareSide {
+  min: number;
+  max: number;
+  /** Worst end of the range: `max` for budgets, `min` for the score. */
+  tail: number;
+  passRate?: number;
+}
+
 export interface CompareResult {
   metric: string;
   verdict: CompareVerdict;
   reason: string;
-  /** Positive when the after report is better on this metric. */
-  p75Delta: number;
-  before: { p75: number; stddev: number; passRate?: number };
-  after: { p75: number; stddev: number; passRate?: number };
+  /** Positive when the after report is better on this metric's worst run. */
+  tailDelta: number;
+  before: CompareSide;
+  after: CompareSide;
   bimodal: boolean;
   requests: RequestDiff;
   cautions: string[];
@@ -142,14 +151,20 @@ export function compareReports(before: AggregatedReport, after: AggregatedReport
   }
   const earlier = seriesOf(before, metric);
   const later = seriesOf(after, metric);
+  const lowerIsBetter = LOWER_IS_BETTER.has(metric);
+  const sideOf = (stats: SeriesStats | undefined, report: AggregatedReport): CompareSide => {
+    const min = stats?.min ?? 0;
+    const max = stats?.max ?? 0;
+    return { min, max, tail: lowerIsBetter ? max : min, passRate: passRateOf(report, metric) };
+  };
   const base = {
     metric,
     requests,
     cautions,
     bimodal: false,
-    p75Delta: 0,
-    before: { p75: earlier?.p75 ?? 0, stddev: earlier?.stddev ?? 0, passRate: passRateOf(before, metric) },
-    after: { p75: later?.p75 ?? 0, stddev: later?.stddev ?? 0, passRate: passRateOf(after, metric) },
+    tailDelta: 0,
+    before: sideOf(earlier, before),
+    after: sideOf(later, after),
   };
   if (!earlier || !later) {
     return {
@@ -159,57 +174,55 @@ export function compareReports(before: AggregatedReport, after: AggregatedReport
     };
   }
 
-  const better = LOWER_IS_BETTER.has(metric) ? earlier.p75 - later.p75 : later.p75 - earlier.p75;
+  const better = lowerIsBetter
+    ? base.before.tail - base.after.tail
+    : base.after.tail - base.before.tail;
   const distribution = (report: AggregatedReport) =>
     metric === 'score' ? report.distributions?.score : report.distributions?.[metric as MetricKey];
   const bimodal = Boolean(distribution(before)?.bimodal || distribution(after)?.bimodal);
-  const beforeRate = passRateOf(before, metric);
-  const afterRate = passRateOf(after, metric);
+  const beforeRate = base.before.passRate;
+  const afterRate = base.after.passRate;
   const passImproved = beforeRate !== undefined && afterRate !== undefined && afterRate > beforeRate + 1e-9;
   const stillMissing = meetsOf(after, metric) === false;
-  const shaped = {
-    ...base,
-    bimodal,
-    p75Delta: better,
-    before: { p75: earlier.p75, stddev: earlier.stddev, passRate: beforeRate },
-    after: { p75: later.p75, stddev: later.stddev, passRate: afterRate },
-  };
+  const shaped = { ...base, bimodal, tailDelta: better };
 
   if (bimodal) {
     if (passImproved && better >= 0) {
       return {
         ...shaped,
         verdict: 'KEEP',
-        reason: `${metric} splits into two groups, but more runs landed inside the budget and p75 did not get worse.`,
+        reason: `${metric} splits into two groups, but more runs landed inside the budget and the worst run did not get worse.`,
       };
     }
     if (better < 0 && stillMissing) {
       return {
         ...shaped,
         verdict: 'REVERT',
-        reason: `${metric} splits into two groups, and p75 still moved the wrong way while the target stays missed.`,
+        reason: `${metric} splits into two groups, and the worst run still moved the wrong way while the target stays missed.`,
       };
     }
     return {
       ...shaped,
       verdict: 'INCONCLUSIVE',
-      reason: `${metric} splits into two groups, so its stddev is not a noise band. Compare lane to lane before keeping a change.`,
+      reason: `${metric} splits into two groups, so its range is not a noise band. Compare lane to lane before keeping a change.`,
     };
   }
 
-  const noise = earlier.stddev;
+  // The baseline's range width is the noise band. It is derived from min/max
+  // only, so a report does not need a separate spread statistic to be judged.
+  const noise = earlier.max - earlier.min;
   if (better > noise) {
     return {
       ...shaped,
       verdict: 'KEEP',
-      reason: `p75 improved by ${round(better)}, which is past the baseline stddev of ${round(noise)}.`,
+      reason: `worst run improved by ${round(better)}, which is past the baseline range of ${round(noise)}.`,
     };
   }
   if (better < -noise) {
     return {
       ...shaped,
       verdict: 'REVERT',
-      reason: `p75 got worse by ${round(-better)}, past the baseline stddev of ${round(noise)}.`,
+      reason: `worst run got worse by ${round(-better)}, past the baseline range of ${round(noise)}.`,
     };
   }
   if (better <= 0 && stillMissing) {
@@ -223,13 +236,13 @@ export function compareReports(before: AggregatedReport, after: AggregatedReport
     return {
       ...shaped,
       verdict: 'KEEP',
-      reason: `p75 stayed inside the noise, but more runs landed inside the ${metric} budget.`,
+      reason: `worst run stayed inside the noise, but more runs landed inside the ${metric} budget.`,
     };
   }
   return {
     ...shaped,
     verdict: 'INCONCLUSIVE',
-    reason: `p75 moved by ${round(better)}, inside the baseline stddev of ${round(noise)}. Re-measure once; if it stays here, revert.`,
+    reason: `worst run moved by ${round(better)}, inside the baseline range of ${round(noise)}. Re-measure once; if it stays here, revert.`,
   };
 }
 

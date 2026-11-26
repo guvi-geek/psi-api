@@ -77,7 +77,7 @@ describe('metricRows', () => {
     expect(lcp.runsInTarget).toBe(passCount(gap));
     expect(lcp.severity).toBe('bad');
     expect(lcp.values).toHaveLength(10);
-    expect(lcp.spread.map((item) => item.label)).toEqual(['p25', 'p75', 'p95', 'Range', 'Stddev']);
+    expect(lcp.spread.map((item) => item.label)).toEqual(['Range']);
   });
 
   it('prints CLS as a unitless score and clamps the bar at 200% of target', () => {
@@ -157,6 +157,26 @@ describe('fieldRows', () => {
     expect(rows.find((row) => row.key === 'lcp')!.value).toBe('2900ms');
     expect(rows.find((row) => row.key === 'cls')!.value).toBe('0.050');
     expect(rows.find((row) => row.key === 'inp')!.value).toBe('Not in CrUX');
+  });
+
+  it('colours each p75 against its lab target, and leaves untargeted or missing metrics plain', () => {
+    const r = report();
+    r.fieldData = {
+      loadingExperience: {
+        metrics: {
+          LARGEST_CONTENTFUL_PAINT_MS: { percentile: 2900 },
+          FIRST_CONTENTFUL_PAINT_MS: { percentile: 1800 },
+          CUMULATIVE_LAYOUT_SHIFT_SCORE: { percentile: 5 },
+          INTERACTION_TO_NEXT_PAINT: { percentile: 150 },
+        },
+      },
+    };
+    const rows = new Map(fieldRows(r)!.map((row) => [row.key, row]));
+    expect(rows.get('lcp')).toMatchObject({ target: '2500ms', severity: 'bad' });
+    expect(rows.get('fcp')).toMatchObject({ target: '1800ms', severity: 'good' });
+    expect(rows.get('cls')).toMatchObject({ target: '0.100', severity: 'good' });
+    expect(rows.get('inp')).toMatchObject({ target: '—', severity: undefined });
+    expect(rows.get('ttfb')).toMatchObject({ value: 'Not in CrUX', severity: undefined });
   });
 });
 

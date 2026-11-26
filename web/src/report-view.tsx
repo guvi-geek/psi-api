@@ -364,16 +364,27 @@ function FieldBlock({ report }: { report: AggregatedReport }) {
     <div className="panel">
       <h2 className="panel-title">Real users (CrUX, 75th percentile)</h2>
       {rows ? (
-        <table className="table">
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.key}>
-                <td>{row.name}</td>
-                <td className="num">{row.value}</td>
+        <>
+          <table className="table">
+            <thead>
+              <tr>
+                <th scope="col">Metric</th>
+                <th scope="col" className="num">p75</th>
+                <th scope="col" className="num">Target</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.key}>
+                  <td>{row.name}</td>
+                  <td className={`num${row.severity ? ` strong text-${row.severity}` : ' muted-cell'}`}>{row.value}</td>
+                  <td className="num muted-cell">{row.target}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="note">Green is at or under the lab target, red is over it. A metric with no target stays plain.</p>
+        </>
       ) : (
         <p className="muted">
           No field data for this page. CrUX needs enough real traffic, so this is normal on staging. Judge on the lab

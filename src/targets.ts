@@ -112,8 +112,8 @@ export function blockedByPlatform(report: Pick<AggregatedReport, 'headline' | 'm
  * Compare the chosen-stat headline against the strategy's targets.
  *
  * When the caller supplies the per-run `metrics` series, every gap also carries
- * its pass rate and tail percentiles, and `meetsTarget` requires the tail to hold
- * up as well as the median.
+ * its pass rate, and `meetsTarget` requires the tail to hold up as well as the
+ * median.
  */
 export function compareToTargets(
   report: Pick<AggregatedReport, 'headline' | 'strategy' | 'metrics'>,
@@ -158,8 +158,6 @@ export function compareToTargets(
       gap.runsMeasured = stats.values.length;
       gap.overBudgetRuns = stats.values.length - inside;
       gap.passRate = round(inside / stats.values.length);
-      gap.p75 = stats.p75;
-      gap.p95 = stats.p95;
       // A metric whose median passes but whose runs do not reliably pass is
       // reported as failing: the budget describes sessions, not the average one.
       if (meets && gap.passRate < minPassRate - EPSILON) gap.meets = false;

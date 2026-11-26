@@ -96,19 +96,10 @@ describe('pass rate grading', () => {
     expect(report.targets.gaps.find((gap) => gap.metric === 'lcp')?.meets).toBe(false);
   });
 
-  it('adds the tail percentiles to each graded gap', () => {
-    const report = aggregate({ lcp: [1000, 1100, 1200, 1300, 4000] });
-    const lcp = report.targets.gaps.find((gap) => gap.metric === 'lcp');
-    // rank = (5-1)*0.75 = 3, which lands exactly on the fourth sample.
-    expect(lcp?.p75).toBe(1300);
-    expect(lcp?.p95).toBe(3460);
-  });
-
   it('omits pass-rate fields when no per-run series is available', () => {
     const bare = compareToTargets({ headline: { score: 95, metrics: METRICS }, strategy: 'mobile' }, targets);
     const lcp = bare.gaps.find((gap) => gap.metric === 'lcp');
     expect(lcp?.passRate).toBeUndefined();
-    expect(lcp?.p75).toBeUndefined();
     expect(bare.gaps.find((gap) => gap.metric === 'lcp')?.meets).toBe(true);
   });
 });

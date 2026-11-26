@@ -174,7 +174,7 @@ Output:
   mobile · Lighthouse 13.5.0 · median of 10/10 runs · 2026-09-30
   measured under moto g power (2022) · CPU index 928 (higher = slower) · en-US · performance only
 
-  SCORE    94 / 100  target 90   p25 93 · p75 94 · p95 94.6 · range 84–95 · stddev 3.4
+  SCORE    94 / 100  target 90   range 84–95
 
   VERDICT  FAIL  1 of 6 targets failing
           FCP 2154ms vs 1800ms (0/10 runs in target)
@@ -1448,9 +1448,10 @@ function renderCompare(before: AggregatedReport, after: AggregatedReport, result
   const tone = result.verdict === 'KEEP' ? 'green' : result.verdict === 'REVERT' ? 'red' : 'yellow';
   const side = (report: AggregatedReport, label: string, stats: CompareResult['before']) => {
     const rate = stats.passRate === undefined ? '' : `  pass ${Math.round(stats.passRate * 100)}%`;
+    const range = `${metricValue(result.metric, stats.min)}–${metricValue(result.metric, stats.max)}`;
     return paint(
       'dim',
-      `  ${label.padEnd(6)} ${report.reportId}  p75 ${metricValue(result.metric, stats.p75)}  stddev ${metricValue(result.metric, stats.stddev)}${rate}`,
+      `  ${label.padEnd(6)} ${report.reportId}  range ${range}${rate}`,
       useColor,
     );
   };

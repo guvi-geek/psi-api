@@ -101,7 +101,7 @@ https://qwik-guvi-perf-fix.codingpuppet.com/zen-class/
 mobile · Lighthouse 13.5.0 · median of 10/10 runs · 2026-09-30
 measured under moto g power (2022) · CPU index 843 (higher = slower) · en-US · performance only
 
-SCORE    95 / 100  target 90   p25 95 · p75 95 · p95 95 · range 94–95 · stddev 0.4
+SCORE    95 / 100  target 90   range 94–95
 
 VERDICT  PASS  2 of 6 targets failing
         FCP 1991ms vs 1800ms (0/10 runs in target), SI 3427ms vs 3400ms (4/10 runs in target)
@@ -206,7 +206,7 @@ The default view, top to bottom. The sample in [Measure a page](#measure-a-page)
 
 **Header.** The measured URL (without the cache-busting nonce), then `strategy · Lighthouse version · <stat> of <succeeded>/<requested> runs · date`, then the [measured under](#the-measured-under-line) line.
 
-**SCORE.** The headline score (the chosen `--stat`, median by default), its target, then the spread across runs: `p25`, `p75`, `p95`, `range` (min–max) and `stddev`. The score is green at 90+, yellow at 50–89 and red below 50, matching Lighthouse's own bands. When the score is [bimodal](#bimodality) a yellow line under it describes the two groups.
+**SCORE.** The headline score (the chosen `--stat`, median by default), its target, then the spread across runs as `range` (min–max). The score is green at 90+, yellow at 50–89 and red below 50, matching Lighthouse's own bands. When the score is [bimodal](#bimodality) a yellow line under it describes the two groups.
 
 **VERDICT.** `N of M targets failing` counts every target in `config/targets.json` for the strategy — the score plus the five metrics in the table. A target fails when fewer than 90% of runs hold it, not only when the median misses (see [A budget is graded on the tail](#a-budget-is-graded-on-the-tail-not-the-median)). The word is `FAIL` only when **more than half** the targets fail, so `PASS  2 of 6 targets failing` is a mostly-healthy page that still has work to do; `meetsTarget` in the JSON is the strict all-targets verdict. The line under it names up to four failing targets, worst relative overshoot first, with how many runs held each. Two optional yellow lines can follow: one when every median is in target but the tail is not, and `not fixable from here: …` for a [budget the frontend cannot meet](#budgets-the-frontend-cannot-meet).
 
@@ -244,7 +244,7 @@ The default output is a summary. Several things in the report have **no represen
 
 | Only in `--json` / the API | Why it matters |
 | --- | --- |
-| `metrics.<metric>.p75`, `.p95`, `.stddev`, `.values` | **The metric's own spread.** The SCORE line prints a spread for the score alone; the metric table shows median, target, verdict, % of target, bar and runs-in-target. A change to LCP must be judged on `metrics.lcp`, and those numbers are JSON-only. |
+| `metrics.<metric>.min`, `.max`, `.values` | **The metric's own range and raw runs.** The SCORE line prints a range for the score alone; the metric table shows median, target, verdict, % of target, bar and runs-in-target. A change to LCP must be judged on `metrics.lcp`, and those numbers are JSON-only. |
 | `distributions.<metric>` | Bimodality per metric. `--diagnose` raises a caution for the *score's* split only; `fcp`, `lcp`, `tbt`, `cls`, `speedIndex`, `tti` and `ttfb` are JSON-only. |
 | `stats.mean` / `.median` / `.mode` | Every metric recomputed under each statistic, side by side. |
 | `fieldData` | CrUX real-user data. See [field data](#field-data-crux) below. |
@@ -274,7 +274,7 @@ Two composition details worth knowing:
 ```bash
 # judge a change on the metric's own distribution, not the score's
 npm run --silent psi -- --reportId $ID --json | jq '{
-  lcp: (.metrics.lcp | {median, p75, stddev}),
+  lcp: (.metrics.lcp | {median, min, max, values}),
   bimodal: .distributions.lcp,
   field: .fieldData
 }'
@@ -287,7 +287,7 @@ npm run --silent psi -- --reportId $ID --json > report.tmp.json
 node -e '
 const r = require("./report.tmp.json");
 console.log(JSON.stringify({
-  lcp: (({median, p75, stddev}) => ({median, p75, stddev}))(r.metrics.lcp),
+  lcp: (({median, min, max, values}) => ({median, min, max, values}))(r.metrics.lcp),
   bimodal: r.distributions.lcp.bimodal,
   field: r.fieldData
 }, null, 2));'
@@ -321,7 +321,7 @@ data/<host>/<reportId>/
   runs.json     # one NormalizedReport per successful run
 ```
 
-Only `--reanalyze` reads `runs.json`. It is the sole place to see `runs[].metrics` (the raw series behind every percentile), `runs[].requests[]` (each run's own request table — `report.json` keeps only the median run's), `runs[].insights[]`, `runs[].fetchTime`, and `runs[].environment`.
+Only `--reanalyze` reads `runs.json`. It is the sole place to see `runs[].metrics` (the raw series behind the range), `runs[].requests[]` (each run's own request table — `report.json` keeps only the median run's), `runs[].insights[]`, `runs[].fetchTime`, and `runs[].environment`.
 
 That last one is the reason to look. `report.environment` is taken from **the run closest to the median**, so it describes one run, not the set. On one real report stored by this tool, `report.environment.benchmarkIndex` read 473.5 while the ten runs behind it ranged from **105.5 to 1292.5** — a twelve-fold spread in the CPU each was scored against. Two runs under materially different conditions are not two samples of one population.
 
@@ -379,7 +379,7 @@ Every metric and the score are reported with all three statistics plus the raw v
   "headline": { "score": 58, "metrics": { "lcp": 3210 } },
   "score": {
     "mean": 57.6, "median": 58, "mode": 58,
-    "min": 52, "max": 61, "stddev": 3.1, "p25": 55.25, "p75": 59.25, "p95": 60.45, "count": 10,
+    "min": 52, "max": 61, "count": 10,
     "values": [55, 57, 58, 58, 59, 61, 52, 60, 58, 56]
   },
   "distributions": {
@@ -395,16 +395,15 @@ Every metric and the score are reported with all three statistics plus the raw v
 ```
 
 - **`median` is the default headline.** Lighthouse is skewed by occasional slow runs; the median is far more stable run to run and is what you should compare against when deciding whether a change helped.
-- **`mean`** is pulled around by outliers. Useful only alongside `stddev` when you specifically care about the average user cost.
+- **`mean`** is pulled around by outliers. Useful when you specifically care about the average user cost.
 - **`mode`** is the most frequently observed bucket. Read it as "what this page typically scores", not as a precise figure.
-- **`stddev` is the sample standard deviation (n−1)** and doubles as the noise band: an improvement smaller than roughly one `stddev` is not distinguishable from run-to-run variance.
-- **`p25` / `p75` / `p95`** are the tail percentiles (`PERCENTILE.INC`). A budget describes real sessions rather than the middle of a distribution, so the p75 is often the number that predicts what a user actually sees. They are the right thing to compare when deciding whether a change helped.
+- **`min` / `max` are the observed range.** Together with `values` they are the only spread this tool reports; the width of the range is the noise band used by `--compare`.
 - **`distributions.<metric>` reports bimodality.** If `bimodal` is `true`, the samples split into two genuinely different states and the median sits in one of them by run count, not because the page reliably performs there. See below.
 - Runs execute with bounded concurrency (`PSI_CONCURRENCY`, default 10, so a 10-run report goes out in one round and takes about as long as its slowest run). The limit is per report: two reports running at once put twice as many calls in flight. Compare reports only against baselines taken at the same concurrency, since a burst of simultaneous loads can raise the origin's TTFB. Some runs may fail; the run continues and the result reports `runsRequested` vs `runsSucceeded`. **If fewer than 60% of runs succeed the whole call fails** with `INSUFFICIENT_RUNS` rather than reporting a misleading number.
 
 #### Bimodality
 
-A page whose score splits into two clusters has no single meaningful `stddev` — averaging the lanes produces a spread that describes neither. The tool splits the samples at the point that minimises within-lane spread (Otsu's method in 1D) and reports `bimodal: true` only when all three hold:
+A page whose score splits into two clusters has no single meaningful range — averaging the lanes produces a spread that describes neither. The tool splits the samples at the point that minimises within-lane spread (Otsu's method in 1D) and reports `bimodal: true` only when all three hold:
 
 - both lanes hold at least **20%** of the samples,
 - there are at least **6** samples in total,
@@ -453,7 +452,7 @@ Reports stored before this was recorded show `Lighthouse 13.5.0, device not reco
 
 **The single most important thing to know about multi-run measurement.** PSI caches results per URL: asking for the same URL twice in a row returns *one* Lighthouse run, not two. Measured directly against the live API — five back-to-back calls returned one identical `analysisUTCTimestamp`.
 
-Left alone, `runs=10` silently becomes *one* measurement counted ten times. `stddev` comes out `0.0`, every value is identical, and the median is a single sample wearing ten hats. That defeats the entire reason this tool exists.
+Left alone, `runs=10` silently becomes *one* measurement counted ten times. Every value is identical and the range collapses to a single number, so the median is a single sample wearing ten hats. That defeats the entire reason this tool exists.
 
 So every run requests a unique param on the target URL:
 
@@ -473,16 +472,16 @@ run 8/10  cached, retrying
 run 8/10  score 86
 ```
 
-#### `stddev: 0.0` is not always a bug
+#### A zero range is not always a bug
 
-Two different things produce zero variance, and they mean opposite things:
+Two different things produce identical scores, and they mean opposite things:
 
 | Cause | What you see | Meaning |
 | --- | --- | --- |
 | **PSI cache** | The same analysis timestamp comes back again | That response is discarded and retried. It is not a sample. |
 | **A pinned page** | Identical scores, but metrics wobble slightly | Real. A page far inside the "good" band — or scoring 100 — legitimately scores the same every time. |
 
-`https://example.com/` returns `stddev 0.0` for a legitimate reason: it is so far above the thresholds that every run rounds to 100. Its LCP still moves (754 / 771 / 783 ms across three runs). **Check the metrics, not just the score, before concluding anything.**
+`https://example.com/` returns the same score in every run for a legitimate reason: it is so far above the thresholds that every run rounds to 100. Its LCP still moves (754 / 771 / 783 ms across three runs). **Check the metrics, not just the score, before concluding anything.**
 
 ### First-party vs third party
 
@@ -678,7 +677,7 @@ Every aggregated report includes:
     {
       "metric": "tbt", "actual": 117.5, "target": 200, "delta": -82.5,
       "passRate": 0.8, "overBudgetRuns": 2, "runsMeasured": 10,
-      "p75": 122, "p95": 423, "meets": false
+      "meets": false
     }
   ],
   "blockedBy": []
@@ -821,7 +820,7 @@ The response carries the headline numbers and target verdict alongside the filte
   "targets": {
     "meetsTarget": false,
     "medianPass": true,
-    "gaps": [ { "metric": "lcp", "actual": 3210, "target": 2500, "delta": 710, "passRate": 0.8, "overBudgetRuns": 2, "runsMeasured": 10, "p75": 3400, "p95": 3900, "meets": false } ],
+    "gaps": [ { "metric": "lcp", "actual": 3210, "target": 2500, "delta": 710, "passRate": 0.8, "overBudgetRuns": 2, "runsMeasured": 10, "meets": false } ],
     "blockedBy": []
   },
   "lcp": { "isText": true, "phases": {}, "bottleneck": "render" },
@@ -905,7 +904,7 @@ To regenerate the fixture: `node scripts/make-fixture.js`.
 | Score `0` with a tiny `fetchTime` | The URL is `localhost`/private, so Lighthouse measured an error page. | Measure a deployed public URL. The tool warns about this up front. |
 | Report takes minutes | Each run is a real PSI call, and a report waits for its slowest run. | Check `PSI_CONCURRENCY` is not set low in `.env`. Use `?async=true`, or `runs=3` while iterating. |
 | Every insight shows `-` savings | Unexpected for Lighthouse 10.4+; those versions report `metricSavings`. | Should not happen — `metricSavings` is read as a fallback. If it does, the response shape has changed and the tool needs a look. |
-| `stddev 0.0`, every value identical | The page is pinned well inside the "good" band. A cached copy is no longer kept in the report. | Check the metric values for the real spread. If PSI keeps returning the same analysis, the command fails with `INSUFFICIENT_RUNS` and `PSI served a cached report`. |
+| A single score value, every run identical | The page is pinned well inside the "good" band. A cached copy is no longer kept in the report. | Check the metric values for the real spread. If PSI keeps returning the same analysis, the command fails with `INSUFFICIENT_RUNS` and `PSI served a cached report`. |
 | Site breaks when a query string is added | Cache busting appends `?psi_nonce=…` to the measured URL. | Rare, but real for strict routers. Use `cacheBust: false` in library code, or confirm the site is measured correctly. |
 
 ## Automation

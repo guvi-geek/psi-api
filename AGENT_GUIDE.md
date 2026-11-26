@@ -68,7 +68,7 @@ cd psi-api
 npm run psi -- https://www.guvi.co/ --runs 10 --stat median --strategy mobile
 ```
 
-Record the whole output, especially `headline`, `score.stddev`, and the gaps.
+Record the whole output, especially `headline`, `score.min`/`score.max`, and the gaps.
 
 > **The URL must be reachable from Google's servers.** PSI runs its bots in Google's public cloud. A page on a private network, or one that blocks Google, returns `FAILED_DOCUMENT_REQUEST` or `ERR_CONNECTION_FAILED` on every run and you will waste the whole iteration discovering that. Confirm the URL loads in a browser *and* is publicly reachable before starting.
 
@@ -571,35 +571,35 @@ Compare against the baseline:
 
 | Comparison | Verdict |
 | --- | --- |
-| `new median score - old median score > old stddev` | **Keep.** Real improvement. |
-| improvement `< old stddev` | **Inconclusive.** Re-measure once; if it stays flat, revert. |
+| `new median score - old median score > (old max - old min)` | **Keep.** Real improvement. |
+| improvement `<= (old max - old min)` | **Inconclusive.** Re-measure once; if it stays flat, revert. |
 | score flat or worse, and the target is still missed | **Revert.** The change did not pay for the risk it adds. |
 
-Use the **baseline's `stddev`** as the noise band — it is the same measurement setup that produced the number you are comparing to. Note that `stddev` shrinks as the median climbs; recompute the band from the most recent report each time.
+Use the **baseline's range width** (`max - min`) as the noise band — it is the same measurement setup that produced the number you are comparing to. The width can change as the median climbs; recompute it from the most recent report each time.
 
-**But judge the change on the metric's own spread, not the score's.** The score is a composite: it moves when any input moves, so `score.stddev` is a band built from every metric at once. A report on this project's deployed page had an LCP `stddev` of `0.0` (2401 ms in all 10 runs) next to a score `stddev` of 3.37. Using the score's spread as the band for an LCP change demands a margin the LCP cannot ever produce, and a genuine 500 ms LCP win gets filed as "inconclusive".
+**But judge the change on the metric's own spread, not the score's.** The score is a composite: it moves when any input moves, so the score's range is built from every metric at once. A report on this project's deployed page had an LCP range of `2401–2401ms` (identical in all 10 runs) next to a score range of `93.8–97.2`. Using the score's range as the band for an LCP change demands a margin the LCP cannot ever produce, and a genuine 500 ms LCP win gets filed as "inconclusive".
 
-Every metric reports `p25`, `p75`, `p95`, `stddev` and its raw `values`, and `distributions.<metric>` reports whether that metric's samples are bimodal. Judge the change you made against **the distribution of the metric you changed**:
+Every metric reports `min`, `max` and its raw `values`, and `distributions.<metric>` reports whether that metric's samples are bimodal. Judge the change you made against **the distribution of the metric you changed**:
 
 | Change to | Judge on |
 | --- | --- |
-| LCP or FCP | `metrics.lcp.p75 - baseline.metrics.lcp.p75`, and `metrics.lcp.stddev` |
-| TBT | `metrics.tbt.p75` and `passRate`, not the score |
-| CSS/JS weight | `distributions.score` and the score's `p75` |
+| LCP or FCP | `metrics.lcp.max - baseline.metrics.lcp.max` (worst run), and the baseline's `max - min` |
+| TBT | `metrics.tbt.max` and `passRate`, not the score |
+| CSS/JS weight | `distributions.score` and the score's `min`/`max` |
 
-> **These numbers are only in `--json`.** The human-readable view prints a spread line for the **score** only; the metric table shows median, target, verdict, % of target, bar and runs-in-target, and nothing else. `metrics.<metric>.p75`, `metrics.<metric>.stddev` and `distributions.<metric>` do not appear anywhere in the text output. To judge a change on the metric you actually edited, read them from JSON:
+> **These numbers are only in `--json`.** The human-readable view prints a range line for the **score** only; the metric table shows median, target, verdict, % of target, bar and runs-in-target, and nothing else. `metrics.<metric>.min`/`max` and `distributions.<metric>` do not appear anywhere in the text output. To judge a change on the metric you actually edited, read them from JSON:
 >
 > ```bash
 > npm run --silent psi -- --reportId <id> --json \
->   | jq '{lcp: (.metrics.lcp | {median, p75, p95, stddev}),
+>   | jq '{lcp: (.metrics.lcp | {median, min, max, values}),
 >        bimodalLcp: .distributions.lcp.bimodal}'
 > ```
 >
 > No `jq`? See 5.7.1 for the equivalent `node -e` one-liner.
 >
-> `--diagnose` does print a bimodality *caution* when the score splits, but it prints no percentiles, and it cautions on the *score's* split rather than the metric's. Do not conclude a metric is stable because the text view is quiet about it.
+> `--diagnose` does print a bimodality *caution* when the score splits, but it prints no range figures, and it cautions on the *score's* split rather than the metric's. Do not conclude a metric is stable because the text view is quiet about it.
 
-**A bimodal metric is not one population, so its `stddev` is not a noise band.** If `distributions.<metric>.bimodal` is `true`, the page has two distinct states — on this project's page the scores cluster at 87.5–88.5 and 93–95.5. Averaging those gives a spread that describes neither state. Read the two lanes separately, work out which lane the change moved, and only compare within a lane. `--diagnose` prints the score's split as a caution; every other metric's split is JSON-only.
+**A bimodal metric is not one population, so its range is not a noise band.** If `distributions.<metric>.bimodal` is `true`, the page has two distinct states — on this project's page the scores cluster at 87.5–88.5 and 93–95.5. Averaging those gives a spread that describes neither state. Read the two lanes separately, work out which lane the change moved, and only compare within a lane. `--diagnose` prints the score's split as a caution; every other metric's split is JSON-only.
 
 Also check the target metric you were actually fixing, not just the score. A change that trades LCP for CLS may leave the score flat while making things worse for users. And re-check `passRate`: a change that pulls one over-budget run back inside the budget is worth keeping even when the median does not move.
 
@@ -624,9 +624,9 @@ One log per host, shared across every page on that host, so keep each entry head
 `src/routes/learn/[courseId]/components/hero/hero.tsx`.
 **Commit:** `perf: preload LCP hero image (lcp-discovery-insight)` on `perf/lcp-hero`
 **Staging PR:** #1220 — polled 10 min after push, 60s cadence, settled green at 14:22Z
-**Baseline:**  median 27 (stddev 3.1)  LCP 16070ms  TBT 2127ms
-**After:**     median 31 (stddev 2.8)  LCP 14810ms  TBT 2102ms
-**Delta:**     +4.0 median (> 3.1 stddev)  LCP -1260ms
+**Baseline:**  median 27 (range 24–31)  LCP 16070ms  TBT 2127ms
+**After:**     median 35 (range 32–37)  LCP 14810ms  TBT 2102ms
+**Delta:**     +8.0 median (> 7 baseline range width)  LCP -1260ms
 **Verdict:**   KEPT
 ```
 
@@ -662,13 +662,13 @@ Loop from Step 2. Stop when `meetsTarget` is `true`, or when you hit the iterati
 
 ## 3. Noise, and how to read it
 
-**Why 10 runs.** A single Lighthouse run is a lab measurement on a shared, throttled connection. Run-to-run score varies by several points on an unchanged page. Ten runs gives the median something stable to sit on and gives `stddev` enough samples to be meaningful. Three runs is a reasonable quick look while you are still exploring; it is not enough to accept a change on.
+**Why 10 runs.** A single Lighthouse run is a lab measurement on a shared, throttled connection. Run-to-run score varies by several points on an unchanged page. Ten runs gives the median something stable to sit on and gives the observed range enough samples to be meaningful. Three runs is a reasonable quick look while you are still exploring; it is not enough to accept a change on.
 
 > **PSI caches per URL.** Ask for the same URL twice in a row and you get *one* Lighthouse run back, not two — the tool works around this by adding a unique `?psi_nonce=…` to every request, and by warning you if the runs collapse to a single timestamp. **If you see that warning, the report is not a real measurement. Discard it and re-run.** Never accept a change on the strength of a cached report.
 
 **Why median is the headline.** Lighthouse is right-skewed — an occasional run catches a slow third-party response and drags the page down. The mean follows those outliers; the median does not. Compare **median to median**.
 
-**When to use mean.** Only when you specifically care about average user cost, and always alongside `stddev`. Useful for judging how bad the bad runs are, not for deciding whether a change worked.
+**When to use mean.** Only when you specifically care about average user cost, and always alongside `min` and `max`. Useful for judging how bad the bad runs are, not for deciding whether a change worked.
 
 **When to use mode.** The most frequently observed bucket, after bucketing (score to 1 point, time metrics to 100 ms, CLS to 0.01). Read it as "what this page typically scores". It is a good sanity check: if `mode` and `median` disagree wildly, the page is bimodal — usually one flaky third party — and you should look at the raw `values` array before trusting either.
 
@@ -676,12 +676,12 @@ Loop from Step 2. Stop when `meetsTarget` is `true`, or when you hit the iterati
 
 **What `flaky: true` means.** The insight appeared in fewer than 30% of successful runs. It is intermittent. Deprioritize it: a flaky finding may not reproduce when you re-measure, so you cannot tell your fix from the noise. If a flaky insight is enormous, check whether a third party is involved before touching anything.
 
-**Accepting a change.** Require the improvement to exceed roughly one `stddev` of the baseline. If it does not, the honest answer is "inconclusive", not "small win". Re-measure once to break the tie; if still inconclusive, revert and note it in the log. Small real wins are still real — but you cannot distinguish them from noise, and shipping a change you cannot measure is how regressions accumulate.
+**Accepting a change.** Require the improvement to exceed the baseline's range width (`max - min`). If it does not, the honest answer is "inconclusive", not "small win". Re-measure once to break the tie; if still inconclusive, revert and note it in the log. Small real wins are still real — but you cannot distinguish them from noise, and shipping a change you cannot measure is how regressions accumulate.
 
-**When `stddev` is `0.0`.** The threshold above silently stops working, so work out which of the two causes you are looking at before deciding anything:
+**When the range collapses to a single value.** The threshold above silently stops working, so work out which of the two causes you are looking at before deciding anything:
 
 - **The tool warned "same analysis timestamp"** → the runs were served from PSI's cache. The report is worthless. Re-measure. Do not compare anything against it.
-- **No warning** → the page is genuinely pinned, usually because it sits far inside the "good" band or already scores 100. A real `cnn.com` baseline showed `25, 29, 27, 35, 36` (stddev 4.9) while `example.com` shows `100, 100, 100` because every run rounds to the ceiling. In that case judge the change on the **metric values and the target comparison** — does LCP actually drop by more than its own spread? — rather than on the score, and require a real margin instead of "> 1 stddev", which is meaningless at zero.
+- **No warning** → the page is genuinely pinned, usually because it sits far inside the "good" band or already scores 100. A real `cnn.com` baseline showed `25, 29, 27, 35, 36` (range 25–36) while `example.com` shows `100, 100, 100` because every run rounds to the ceiling. In that case judge the change on the **metric values and the target comparison** — does LCP actually drop by more than its own spread? — rather than on the score, and require a real margin instead of "> baseline range width", which is meaningless at zero.
 
 ---
 
@@ -752,11 +752,11 @@ curl -X POST http://127.0.0.1:3939/report \
   "headline": { "score": 27, "metrics": { "lcp": 16070, "tbt": 2127, "cls": 0, "fcp": 7332, "speedIndex": 13287, "ttfb": 380 } },
   "score": {
     "mean": 27.4, "median": 27, "mode": 27,
-    "min": 24, "max": 31, "stddev": 2.1, "count": 10,
+    "min": 24, "max": 31, "count": 10,
     "values": [27, 26, 24, 28, 29, 27, 31, 25, 28, 30]
   },
   "metrics": {
-    "lcp": { "mean": 16120.5, "median": 16070, "mode": 16000, "min": 15200, "max": 17400, "stddev": 640, "count": 10, "values": [] }
+    "lcp": { "mean": 16120.5, "median": 16070, "mode": 16000, "min": 15200, "max": 17400, "count": 10, "values": [] }
   },
   "stats": {
     "mean":   { "score": 27.4, "metrics": { "lcp": 16120.5 } },
@@ -925,7 +925,7 @@ https://www.guvi.co/
 mobile · Lighthouse 13.5.0 · median of 10/10 runs · 2026-09-30
 measured under moto g power (2022) · CPU index 843 (higher = slower) · en-US · performance only
 
-SCORE    95 / 100  target 90   p25 95 · p75 95 · p95 95 · range 94–95 · stddev 0.4
+SCORE    95 / 100  target 90   range 94–95
 
 VERDICT  PASS  2 of 6 targets failing
         FCP 1991ms vs 1800ms (0/10 runs in target), SI 3427ms vs 3400ms (4/10 runs in target)
@@ -949,7 +949,7 @@ FINDINGS  32 shown
 saved as reportId 2026-09-30T08-04-23Z-mobile
 ```
 
-The spread line reports the score's tail percentiles, and every failing gap carries its run count. **Note what is *not* here:** per-metric `p75`/`stddev`, per-metric bimodality, `fieldData`, and the insight rows. Add `--diagnose` for the ranked queue, LCP element, image checks and cautions; `--items` / `--requests` for the rows; `--json` for everything else (see 5.7.1).
+The spread line reports the score's observed range, and every failing gap carries its run count. **Note what is *not* here:** per-metric range (`min`/`max`), per-metric bimodality, `fieldData`, and the insight rows. Add `--diagnose` for the ranked queue, LCP element, image checks and cautions; `--items` / `--requests` for the rows; `--json` for everything else (see 5.7.1).
 
 ```bash
 # costs nothing - same stored report, TBT focus, flaky hidden, JSON out
@@ -985,7 +985,7 @@ And inside the report itself, these are JSON-only:
 
 | Field | Why you want it |
 | --- | --- |
-| `metrics.<metric>.p75` / `p95` / `stddev` / `values` | **The metric's own spread.** Step 9 tells you to judge on these; the text view prints a spread line for the score only. |
+| `metrics.<metric>.min` / `max` / `values` | **The metric's own range and raw runs.** Step 9 tells you to judge on these; the text view prints a range line for the score only. |
 | `distributions.<metric>` | Bimodality per metric, with `lanes`, `share`, `separation` and `note`. `--diagnose` cautions on the *score's* split only. |
 | `stats.mean` / `stats.median` / `stats.mode` | Every metric recomputed under each statistic, side by side. |
 | `fieldData` | CrUX real-user data — the only field-vs-lab signal. See 5.2. |
@@ -1001,8 +1001,8 @@ A worked read — is the metric I changed actually bimodal, and how tight is it?
 
 ```bash
 npm run --silent psi -- --reportId <id> --json | jq '{
-  lcp:  (.metrics.lcp | {median, p75, stddev}),
-  fcp:  (.metrics.fcp | {median, p75, stddev}),
+  lcp:  (.metrics.lcp | {median, min, max, values}),
+  fcp:  (.metrics.fcp | {median, min, max, values}),
   bimodalLcp: .distributions.lcp.bimodal,
   field: .fieldData,
   warnings
@@ -1015,7 +1015,7 @@ npm run --silent psi -- --reportId <id> --json | jq '{
 npm run --silent psi -- --reportId <id> --json > report.tmp.json
 node -e '
 const r = require("./report.tmp.json");
-const spread = (k) => ({ median: r.metrics[k].median, p75: r.metrics[k].p75, stddev: r.metrics[k].stddev });
+const spread = (k) => ({ median: r.metrics[k].median, min: r.metrics[k].min, max: r.metrics[k].max, values: r.metrics[k].values });
 console.log(JSON.stringify({
   lcp: spread("lcp"), fcp: spread("fcp"),
   bimodalLcp: r.distributions.lcp.bimodal,
@@ -1042,7 +1042,7 @@ Nothing in the CLI or the HTTP API reads `runs.json` except `--reanalyze`. It is
 
 | Field | Only available here |
 | --- | --- |
-| `runs[].metrics` | Every metric of that individual run — the raw series behind `p25`/`stddev` |
+| `runs[].metrics` | Every metric of that individual run — the raw series behind the median and range |
 | `runs[].environment` | That run's own `benchmarkIndex`, `networkUserAgent`, `lighthouseVersion` |
 | `runs[].requests[]` | That run's own request table. `report.json` keeps only the **median** run's. |
 | `runs[].insights[]` | That run's insights, including ones absent from the median run |
@@ -1160,7 +1160,7 @@ curl http://127.0.0.1:3939/health
 - [ ] Confirmed the new build hash is being served, not a stale edge
 - [ ] Re-measured with 10 runs
 - [ ] Desktop measured once mobile met its target, and it meets its own target
-- [ ] Improvement beat the baseline `stddev`, or the change was reverted
+- [ ] Improvement beat the baseline range width, or the change was reverted
 - [ ] `optimization-log.md` appended
 - [ ] `psi-api/` untouched
 - [ ] `config/targets.json` untouched

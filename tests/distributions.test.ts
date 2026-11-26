@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateReports, detectDistribution, MIN_NOTE_GAP, percentile, seriesStats } from '../src/aggregate.js';
+import { aggregateReports, detectDistribution, MIN_NOTE_GAP, seriesStats } from '../src/aggregate.js';
 import { normalizeLh13, LH13_URL } from './helpers.js';
 import type { NormalizedReport, Strategy } from '../src/types.js';
 
@@ -12,42 +12,6 @@ function run(index: number, overrides: Partial<NormalizedReport> = {}): Normaliz
   report.score = SCORE_SPLIT[index] ?? 90;
   return Object.assign(report, overrides);
 }
-
-describe('percentile', () => {
-  it('agrees with the median at p50', () => {
-    const values = [10, 20, 30, 40, 100];
-    expect(percentile(values, 0.5)).toBe(30);
-    expect(seriesStats(values, 'x').median).toBe(percentile(values, 0.5));
-  });
-
-  it('interpolates between samples', () => {
-    expect(percentile([0, 10], 0.25)).toBe(2.5);
-    expect(percentile([0, 10], 0.75)).toBe(7.5);
-  });
-
-  it('returns the endpoints and the only value', () => {
-    expect(percentile([4, 8, 6], 0)).toBe(4);
-    expect(percentile([4, 8, 6], 1)).toBe(8);
-    expect(percentile([7], 0.95)).toBe(7);
-    expect(percentile([], 0.5)).toBe(0);
-  });
-
-  it('is order-independent', () => {
-    expect(percentile([100, 10, 40], 0.75)).toBe(percentile([10, 40, 100], 0.75));
-  });
-});
-
-describe('seriesStats', () => {
-  it('reports quartiles alongside the existing triple', () => {
-    const stats = seriesStats([1, 2, 3, 4], 'x');
-    expect(stats.p25).toBe(1.75);
-    expect(stats.p75).toBe(3.25);
-    expect(stats.p95).toBe(3.85);
-    // Existing fields are untouched.
-    expect(stats.median).toBe(2.5);
-    expect(stats.count).toBe(4);
-  });
-});
 
 describe('detectDistribution', () => {
   it('flags two well-separated, evenly sized clusters', () => {
@@ -134,11 +98,11 @@ describe('aggregateReports', () => {
     expect(aggregateReports([], { reportId: 'r', runsRequested: 0 }).lcp).toBeNull();
   });
 
-  it('exposes percentiles on every metric series', () => {
+  it('exposes the range on every metric series', () => {
     const report = aggregateReports(reports, { reportId: 'r', runsRequested: 10 });
-    expect(report.score.p75).toBeGreaterThanOrEqual(report.score.median);
-    expect(report.score.p95).toBeGreaterThanOrEqual(report.score.p75);
-    expect(report.metrics.lcp?.p95).toBeGreaterThan(0);
+    expect(report.score.min).toBeLessThanOrEqual(report.score.median);
+    expect(report.score.max).toBeGreaterThanOrEqual(report.score.median);
+    expect(report.metrics.lcp?.max).toBeGreaterThanOrEqual(report.metrics.lcp?.min ?? 0);
   });
 });
 

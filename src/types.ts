@@ -239,20 +239,8 @@ export interface SeriesStats {
   mode: number;
   min: number;
   max: number;
-  stddev: number;
   count: number;
   values: number[];
-  /**
-   * Quartiles, linear-interpolated (the PERCENTILE.INC convention).
-   *
-   * These exist because the mean/median/mode trio describes the *centre* of a
-   * distribution and nothing else. A page whose LCP alternates between 2.4s and
-   * 3.0s has a perfectly respectable median and a 95th percentile well over
-   * budget, and a performance budget is a statement about the tail.
-   */
-  p25: number;
-  p75: number;
-  p95: number;
 }
 
 /**
@@ -331,9 +319,6 @@ export interface Gap {
   runsMeasured?: number;
   /** How many of those runs were over budget. */
   overBudgetRuns?: number;
-  /** 75th/95th percentile, when available. */
-  p75?: number;
-  p95?: number;
 }
 
 export interface TargetComparison {

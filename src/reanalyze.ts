@@ -4,8 +4,8 @@
  * The aggregation and target logic in this tool has changed several times in
  * ways that alter stored conclusions: budgets are now graded on the tail rather
  * than the median, savings figures are recovered from row data when Lighthouse
- * writes a zero rollup, and metrics report their own distribution instead of a
- * single stddev.
+ * writes a zero rollup, and metrics report their own distribution instead of
+ * a single spread statistic.
  *
  * A stored `report.json` is a frozen snapshot of whatever those rules produced
  * on the day it was written. Re-filtering it with `--reportId` therefore

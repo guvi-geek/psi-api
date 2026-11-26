@@ -98,17 +98,12 @@ export interface SpreadItem {
   value: string;
 }
 
-/** p25, p75, p95, range and stddev: the parts of the CLI's spread line. */
+/** The range: the only spread the CLI's score line and metric detail show. */
 export function spreadItems(stats: SeriesStats | undefined, metric: string): SpreadItem[] {
   if (!stats) return [];
-  const items: SpreadItem[] = [
-    { label: 'p25', value: metricValue(metric, stats.p25) },
-    { label: 'p75', value: metricValue(metric, stats.p75) },
-    { label: 'p95', value: metricValue(metric, stats.p95) },
+  return [
     { label: 'Range', value: `${metricValue(metric, stats.min)}–${metricValue(metric, stats.max)}` },
   ];
-  if (Number.isFinite(stats.stddev)) items.push({ label: 'Stddev', value: stats.stddev.toFixed(1) });
-  return items;
 }
 
 export interface MetricRow {
@@ -207,14 +202,28 @@ export interface FieldRow {
   key: string;
   name: string;
   value: string;
+  /** The lab target for the same metric, or '—' when the target set has none. */
+  target: string;
+  /** Good at or under the target, bad over it. Absent with no target or no CrUX value. */
+  severity?: Severity;
 }
 
-/** CrUX real-user p75 for the measured URL. `null` when CrUX has no data. */
+/** CrUX real-user p75 for the measured URL, judged on the lab targets. `null` when CrUX has no data. */
 export function fieldRows(report: Report): FieldRow[] | null {
   if (!fieldDataPresent(report.fieldData)) return null;
   return (['lcp', 'fcp', 'cls', 'inp', 'ttfb'] as const).map((key) => {
     const value = fieldP75(report.fieldData, key);
-    return { key, name: METRIC_NAMES[key] ?? key, value: value === undefined ? 'Not in CrUX' : metricValue(key, value) };
+    const target = report.targets.targets[key];
+    // Every field metric is lower-is-better.
+    const severity: Severity | undefined =
+      value === undefined || target === undefined ? undefined : value <= target ? 'good' : 'bad';
+    return {
+      key,
+      name: METRIC_NAMES[key] ?? key,
+      value: value === undefined ? 'Not in CrUX' : metricValue(key, value),
+      target: target === undefined ? '—' : metricValue(key, target),
+      severity,
+    };
   });
 }
 

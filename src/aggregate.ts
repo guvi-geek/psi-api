@@ -138,39 +138,12 @@ export function mode(values: number[], width: number): number {
   return winners[0] as number;
 }
 
-/** Sample standard deviation (n-1). Zero for fewer than 2 samples. */
-export function stddev(values: number[]): number {
-  if (values.length < 2) return 0;
-  const avg = mean(values);
-  const variance = values.reduce((sum, value) => sum + (value - avg) ** 2, 0) / (values.length - 1);
-  return Math.sqrt(variance);
-}
-
-/**
- * Linear-interpolated percentile (the PERCENTILE.INC convention).
- *
- * `p` is a fraction in 0-1. Uses the same index formula as `median` so the
- * median stays exactly the p50 of this function - the two can never disagree.
- */
-export function percentile(values: number[], p: number): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  if (sorted.length === 1) return sorted[0] as number;
-
-  const rank = (sorted.length - 1) * Math.min(Math.max(p, 0), 1);
-  const lower = Math.floor(rank);
-  const upper = Math.ceil(rank);
-  if (lower === upper) return sorted[lower] as number;
-  const weight = rank - lower;
-  return (sorted[lower] as number) * (1 - weight) + (sorted[upper] as number) * weight;
-}
-
 /**
  * How far apart two clusters are, in units of their own spread.
  *
  * 1 means "one continuous population"; large means "two different worlds".
  * Uses the between-cluster separation over the pooled within-cluster variance,
- * which is the ratio that stays meaningful when the overall stddev is inflated
+ * which is the ratio that stays meaningful when the overall spread is inflated
  * by the very gap being measured.
  */
 function separation(between: number, withinSquares: number, totalCount: number): number {
@@ -286,12 +259,8 @@ export function seriesStats(values: number[], metricName: string): SeriesStats {
     ...stats,
     min: values.length ? Math.min(...values) : 0,
     max: values.length ? Math.max(...values) : 0,
-    stddev: round(stddev(values), 4),
     count: values.length,
     values: [...values],
-    p25: round(percentile(values, 0.25), 4),
-    p75: round(percentile(values, 0.75), 4),
-    p95: round(percentile(values, 0.95), 4),
   };
 }
 

@@ -8,7 +8,6 @@ import {
   median,
   mode,
   seriesStats,
-  stddev,
 } from '../src/aggregate.js';
 import { makeReport } from './helpers.js';
 
@@ -35,13 +34,6 @@ describe('mean / median / mode', () => {
     expect(mean([])).toBe(0);
     expect(median([])).toBe(0);
     expect(mode([], 1)).toBe(0);
-    expect(stddev([])).toBe(0);
-    expect(stddev([42])).toBe(0);
-  });
-
-  it('uses the sample standard deviation (n-1)', () => {
-    // [2,4,4,4,5,5,7,9] has mean 5 and sample stddev 2.13809
-    expect(stddev([2, 4, 4, 4, 5, 5, 7, 9])).toBeCloseTo(2.13809, 4);
   });
 });
 
