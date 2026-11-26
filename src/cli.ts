@@ -1,4 +1,5 @@
 import { config as loadEnv } from 'dotenv';
+import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { runReport, MAX_RUNS, InsufficientRunsError } from './runner.js';
 import { filterInsights } from './insights.js';
@@ -12,7 +13,10 @@ import { STATS, STRATEGIES, type AggregatedReport, type MetricKey, type SortFiel
 import type { FilterGroup, Gap, ImageFinding, InsightFilters } from './types.js';
 import { imagesOf } from './images.js';
 import { renderInsightRows, renderNotFound, renderRequests } from './rows.js';
-import { UrlValidationError } from './psiClient.js';
+import { UrlValidationError, validateTargetUrl, type RetryInfo } from './psiClient.js';
+import { isSeoId, runSeoCheck } from './seo.js';
+import { listSeoChecks, loadSeoCheck, saveSeoCheck } from './seo-storage.js';
+import { renderSeoCheck, renderSeoList } from './seo-render.js';
 import {
   ABSENT,
   METRIC_ROWS,
@@ -88,7 +92,17 @@ interface CliOptions {
   list: boolean;
   /** Judge a later report against an earlier one. */
   compare?: [string, string];
+  /** Check the page's SEO: one PSI call with category=seo, saved apart from reports. */
+  seo: boolean;
+  /** Re-read a saved SEO check. Costs no PSI quota. */
+  seoId?: string;
+  /** List saved SEO checks. Costs no PSI quota. */
+  seoList: boolean;
 }
+
+/** Flags an SEO mode accepts besides itself. Anything else is a usage error. */
+const SEO_CHECK_FLAGS = ['--desktop', '--mobile', '--strategy', '--no-save', '--json'];
+const SEO_READ_FLAGS = ['--json'];
 
 const USAGE = `
 psi - PageSpeed Insights report
@@ -152,6 +166,24 @@ Options:
   --json                  Machine-readable JSON
   --no-save               Do not write the report to data/
   -h, --help              This message
+
+SEO check (separate from the performance report):
+  --seo                   Check the page's SEO instead of its performance:
+                           score, failed audits by group, manual checks,
+                           passed, not applicable. Costs 1 PSI call. Honours
+                           --desktop / --mobile, --no-save and --json. Saved
+                           under data/<host>/seo/
+  --seoId <id>            Re-read a saved SEO check. Costs no PSI quota.
+                           Honours --json
+  --seoList               List saved SEO checks, newest first. Costs no PSI
+                           quota. Honours --json
+  These are separate modes: they do not combine with each other or with the
+  report options above.
+
+  npm run psi -- https://example.com --seo
+  npm run psi -- https://example.com --seo --desktop
+  npm run psi -- --seoId 2026-11-26T10-30-00Z-mobile-seo
+  npm run psi -- --seoList
 
 Examples:
   npm run psi -- https://example.com
@@ -391,10 +423,26 @@ export function parseArgs(argv: string[]): CliOptions | null {
   let noSave = false;
   let list = false;
   let compare: [string, string] | undefined;
+  let seo = false;
+  let seoId: string | undefined;
+  let seoList = false;
+  // Every flag given, so an SEO mode can refuse the ones that mean nothing to it.
+  const flags: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i] as string;
+    if (arg.startsWith('-')) flags.push(arg);
     switch (arg) {
+      case '--seo':
+        seo = true;
+        break;
+      case '--seoId':
+        seoId = takeValue(argv, i, arg);
+        i += 1;
+        break;
+      case '--seoList':
+        seoList = true;
+        break;
       case '--reportId': {
         reportId = takeValue(argv, i, arg);
         i += 1;
@@ -565,9 +613,26 @@ export function parseArgs(argv: string[]): CliOptions | null {
   }
 
   const url = positional[0];
+
+  // The SEO modes are their own commands: one at a time, and only with the
+  // flags that mean something to them.
+  const seoModes = [seo ? '--seo' : '', seoId !== undefined ? '--seoId' : '', seoList ? '--seoList' : ''].filter(Boolean);
+  if (seoModes.length > 1) fail(`${seoModes.join(' and ')} are separate modes - use one at a time`);
+  const seoMode = seoModes[0];
+  if (seoMode) {
+    const allowed = seoMode === '--seo' ? SEO_CHECK_FLAGS : SEO_READ_FLAGS;
+    const extra = flags.find((flag) => flag !== seoMode && !allowed.includes(flag));
+    if (extra) fail(`${extra} cannot be combined with ${seoMode}`);
+    if (seoMode === '--seo' && !url) fail('--seo requires a url, e.g. npm run psi -- https://example.com --seo');
+    if (seoMode !== '--seo' && url) fail(`unexpected argument "${url}" - ${seoMode} takes no url`);
+    if (seoId !== undefined && !isSeoId(seoId)) {
+      fail(`--seoId expects an id like 2026-11-26T10-30-00Z-mobile-seo, got "${seoId}"`);
+    }
+  }
+
   // A re-analysis reads reports from disk, so it needs neither a url nor an id:
   // with no `--reportId` it sweeps everything stored.
-  if (!url && !reportId && !reanalyzeFlag && !list && !compare) {
+  if (!url && !reportId && !reanalyzeFlag && !list && !compare && !seoMode) {
     fail(`a url or --reportId is required\n${USAGE}`);
   }
   if (url && positional.length > 1) fail(`unexpected argument "${positional[1]}"`);
@@ -601,6 +666,9 @@ export function parseArgs(argv: string[]): CliOptions | null {
     requests,
     list,
     compare,
+    seo,
+    seoId,
+    seoList,
   };
 }
 
@@ -1505,7 +1573,89 @@ async function runCompare(options: CliOptions): Promise<number> {
   return 0;
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<number> {
+/** Injected by tests so `--seo` never reaches the network. Defaults to today's behaviour. */
+export interface CliDeps {
+  fetchImpl?: typeof fetch;
+  sleepImpl?: (ms: number) => Promise<void>;
+}
+
+/** A path under the working directory reads shorter; anything else stays absolute. */
+function displayPath(file: string): string {
+  const relative = path.relative(process.cwd(), file);
+  return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? relative : file;
+}
+
+/** One PSI call with category=seo, validated and keyed exactly as a measurement is. */
+async function runSeo(options: CliOptions, deps: CliDeps): Promise<number> {
+  // Same validation as the measure path: a bad url throws UrlValidationError,
+  // a private host is a warning printed after the call.
+  const { url, warnings } = validateTargetUrl(options.url);
+  const useColor = colorEnabled();
+  if (!options.json) {
+    const page = shortenUrl(url, Math.max(24, termWidth() - options.strategy.length - 20));
+    process.stderr.write(`${paint('bold', 'PSI - API', useColor)}\n`);
+    process.stderr.write(`${paint('dim', `${options.strategy} · SEO · 1 PSI call · ${page}`, useColor)}\n\n`);
+  }
+  const check = await runSeoCheck({
+    url,
+    strategy: options.strategy,
+    apiKey: process.env.PSI_API_KEY,
+    fetchImpl: deps.fetchImpl,
+    sleepImpl: deps.sleepImpl,
+    onRetry: ({ attempt, reason, delayMs }: RetryInfo) => {
+      if (options.json) return;
+      // Attempt 0 is the missing-key note, sent before any request: not a retry.
+      if (attempt === 0) process.stderr.write(`${paint('yellow', 'warning', false)}: ${reason}\n`);
+      else process.stderr.write(`${paint('yellow', 'retry', false)}: ${reason} (${delayMs}ms)\n`);
+    },
+  });
+  const file = options.noSave ? undefined : await saveSeoCheck(check);
+
+  for (const warning of warnings) {
+    process.stderr.write(`${paint('yellow', 'warning', false)}: ${warning}\n`);
+  }
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(check, null, 2)}\n`);
+    return 0;
+  }
+  const lines = ['', ...renderSeoCheck(check, { width: termWidth(), useColor }), ''];
+  if (file) {
+    lines.push(paint('dim', `saved as seoId ${check.seoId} in ${displayPath(file)}`, useColor));
+    lines.push(paint('dim', `--seoId ${check.seoId} re-reads it for free (no PSI call)`, useColor));
+  } else {
+    lines.push(paint('dim', 'not saved (--no-save)', useColor));
+  }
+  lines.push('');
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return 0;
+}
+
+async function runSeoRead(options: CliOptions): Promise<number> {
+  const seoId = options.seoId ?? '';
+  const check = await loadSeoCheck(seoId);
+  if (!check) fail(`no saved SEO check "${seoId}" - run one first with --seo <page>, or see --seoList`);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(check, null, 2)}\n`);
+    return 0;
+  }
+  const lines = ['', ...renderSeoCheck(check, { width: termWidth(), useColor: colorEnabled() }), ''];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return 0;
+}
+
+async function runSeoList(options: CliOptions): Promise<number> {
+  const checks = await listSeoChecks();
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify({ checks }, null, 2)}\n`);
+    return 0;
+  }
+  const lines = ['', ...renderSeoList(checks, { width: termWidth(), useColor: colorEnabled() }), ''];
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return 0;
+}
+
+export async function main(argv = process.argv.slice(2), deps: CliDeps = {}): Promise<number> {
   const options = parseArgs(argv);
   if (!options) {
     process.stdout.write(`${USAGE}\n`);
@@ -1513,6 +1663,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
   }
 
   try {
+    if (options.seo) return await runSeo(options, deps);
+    if (options.seoId !== undefined) return await runSeoRead(options);
+    if (options.seoList) return await runSeoList(options);
     if (options.list) return await runList(options);
     if (options.compare) return await runCompare(options);
     if (options.reanalyze) return await runReanalyze(options);
