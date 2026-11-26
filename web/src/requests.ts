@@ -12,9 +12,16 @@ export interface RequestFilters {
   party: 'any' | 'first' | 'third';
   sortBy: 'start' | 'size';
   limit?: number;
+  /** Request types to show, e.g. ["Image", "Font"]. Empty shows every type. */
+  types?: string[];
 }
 
 export const DEFAULT_REQUESTS: RequestFilters = { party: 'any', sortBy: 'start' };
+
+/** A request's type as the tab names it: Chrome leaves some blank, and those count as Other. */
+export function requestTypeOf(request: Pick<NetworkRequest, 'resourceType'>): string {
+  return request.resourceType?.trim() || 'Other';
+}
 
 export function requestsFromParams(params: URLSearchParams): RequestFilters {
   const filters: RequestFilters = { ...DEFAULT_REQUESTS };
@@ -23,6 +30,11 @@ export function requestsFromParams(params: URLSearchParams): RequestFilters {
   if (params.get('order') === 'size') filters.sortBy = 'size';
   const limit = Number(params.get('limit') ?? NaN);
   if (params.get('limit') !== null && Number.isInteger(limit) && limit >= 0) filters.limit = limit;
+  const types = (params.get('type') ?? '')
+    .split(',')
+    .map((type) => type.trim())
+    .filter(Boolean);
+  if (types.length) filters.types = types;
   return filters;
 }
 
@@ -31,6 +43,7 @@ export function requestsToParams(filters: RequestFilters): URLSearchParams {
   if (filters.party !== 'any') params.set('party', filters.party);
   if (filters.sortBy === 'size') params.set('order', 'size');
   if (filters.limit !== undefined) params.set('limit', String(filters.limit));
+  if (filters.types?.length) params.set('type', filters.types.join(','));
   return params;
 }
 
@@ -57,7 +70,11 @@ export function requestRows(
   filters: RequestFilters,
 ): { rows: RequestRow[]; matched: number } {
   const all = requests ?? [];
-  let shown = all.filter((request) => filters.party === 'any' || request.party === filters.party);
+  let shown = all.filter(
+    (request) =>
+      (filters.party === 'any' || request.party === filters.party) &&
+      (!filters.types?.length || filters.types.includes(requestTypeOf(request))),
+  );
   if (filters.sortBy === 'size') shown = [...shown].sort((a, b) => (b.transferSize ?? 0) - (a.transferSize ?? 0));
   const matched = shown.length;
   if (filters.limit !== undefined) shown = shown.slice(0, filters.limit);
@@ -68,7 +85,7 @@ export function requestRows(
       url: request.url,
       start: ms(request.startMs),
       end: ms(request.endMs),
-      type: request.resourceType ?? ABSENT,
+      type: requestTypeOf(request),
       priority: request.priority ?? ABSENT,
       size: formatBytes(request.transferSize),
       resourceSize: formatBytes(request.resourceSize),
@@ -88,18 +105,38 @@ export interface RequestTotals {
   first: { count: number; bytes: string };
   third: { count: number; bytes: string };
   notFound: number;
-  byType: Array<{ type: string; count: number; bytes: string }>;
+  /** Biggest first. `label` reads "40 Images"; a request with no type counts as Other. */
+  byType: Array<{ type: string; count: number; bytes: string; label: string }>;
+}
+
+/** Type names that don't just take an "s". */
+export const TYPE_PLURALS: Record<string, string> = { Fetch: 'Fetches', Media: 'Media', Other: 'Other' };
+
+/** "1 Image", "40 Images", "2 Fetches". */
+export function countOfType(count: number, type: string): string {
+  return `${count} ${count === 1 ? type : (TYPE_PLURALS[type] ?? `${type}s`)}`;
 }
 
 /** The CLI's REQUESTS summary line, from its own requestSummary. */
 export function requestTotals(requests: NetworkRequest[]): RequestTotals {
   const summary = requestSummary(requests);
+  // Chrome leaves some requests without a type; they belong with Other, not under a blank name.
+  const merged = new Map<string, { count: number; bytes: number }>();
+  for (const entry of summary.byType) {
+    const type = requestTypeOf({ resourceType: entry.type });
+    const total = merged.get(type) ?? { count: 0, bytes: 0 };
+    total.count += entry.count;
+    total.bytes += entry.bytes;
+    merged.set(type, total);
+  }
   return {
     count: summary.count,
     bytes: formatBytes(summary.bytes),
     first: { count: summary.byParty.first.count, bytes: formatBytes(summary.byParty.first.bytes) },
     third: { count: summary.byParty.third.count, bytes: formatBytes(summary.byParty.third.bytes) },
     notFound: requests.filter((request) => request.statusCode === 404).length,
-    byType: summary.byType.map((entry) => ({ type: entry.type, count: entry.count, bytes: formatBytes(entry.bytes) })),
+    byType: [...merged.entries()]
+      .sort((a, b) => b[1].bytes - a[1].bytes || b[1].count - a[1].count)
+      .map(([type, entry]) => ({ type, count: entry.count, bytes: formatBytes(entry.bytes), label: countOfType(entry.count, type) })),
   };
 }

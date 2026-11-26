@@ -3,7 +3,14 @@
 import { useEffect, useId, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import { href } from './router';
-import { requestRows, requestsFromParams, requestsToParams, requestTotals, type RequestFilters } from './requests';
+import {
+  requestRows,
+  requestsFromParams,
+  requestsToParams,
+  requestTotals,
+  TYPE_PLURALS,
+  type RequestFilters,
+} from './requests';
 
 /** The CLI's --requests: every request the median run made. */
 export function RequestsView({ report, params }: { report: AggregatedReport; params: URLSearchParams }) {
@@ -31,19 +38,27 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   const totals = requestTotals(requests);
   const { rows, matched } = requestRows(requests, filters);
   const update = (patch: Partial<RequestFilters>) => setFilters((current) => ({ ...current, ...patch }));
+  const toggleType = (type: string) =>
+    setFilters((current) => ({
+      ...current,
+      types: (current.types ?? []).includes(type) ? (current.types ?? []).filter((entry) => entry !== type) : [...(current.types ?? []), type],
+    }));
 
   return (
     <div className="stack">
       <div className="panel">
         <p className="request-totals">
-          <strong>{totals.count} requests</strong>, {totals.bytes} transferred. First party {totals.first.count} (
-          {totals.first.bytes}), third party {totals.third.count} ({totals.third.bytes})
+          <strong>
+            {totals.count} request{totals.count === 1 ? '' : 's'} - {totals.bytes}
+          </strong>{' '}
+          transferred. {totals.first.count} first-party - {totals.first.bytes}, {totals.third.count} third-party -{' '}
+          {totals.third.bytes}
           {totals.notFound > 0 && <span className="text-bad">, {totals.notFound} returned 404 Not Found</span>}.
         </p>
         <ul className="type-list">
           {totals.byType.map((entry) => (
             <li key={entry.type}>
-              {entry.type} <span className="muted-cell">{entry.count}, {entry.bytes}</span>
+              {entry.label} <span className="muted-cell">- {entry.bytes}</span>
             </li>
           ))}
         </ul>
@@ -98,6 +113,27 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
             />
           </label>
         </div>
+
+        {/* Types in the report, biggest first; pick any to show only those. */}
+        <div className="filter-row">
+          <div className="chip-group" role="group" aria-label="Request type">
+            <span className="filter-label">Type</span>
+            <button type="button" className="chip" aria-pressed={!filters.types?.length} onClick={() => update({ types: undefined })}>
+              All
+            </button>
+            {totals.byType.map((entry) => (
+              <button
+                key={entry.type}
+                type="button"
+                className="chip"
+                aria-pressed={Boolean(filters.types?.includes(entry.type))}
+                onClick={() => toggleType(entry.type)}
+              >
+                {TYPE_PLURALS[entry.type] ?? `${entry.type}s`} <span className="chip-count">{entry.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="panel table-panel">
@@ -143,6 +179,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
       </div>
 
       <p className="note">
+        {matched === 0 ? 'No request matches these filters. ' : ''}
         {matched > rows.length ? `${matched - rows.length} more hidden by Show at most. ` : ''}
         Start and End are milliseconds after the first request, observed on PSI&apos;s own connection. Use them for order,
         not to compare with FCP or LCP, which are simulated on a throttled link. Hover a size for the uncompressed size.

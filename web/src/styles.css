@@ -1424,6 +1424,46 @@ a.tab:hover {
 
 /* ---------- requests ---------- */
 
+/* Type filter: toggle chips with their counts. */
+.chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.chip-group .filter-label {
+  margin-right: 4px;
+}
+.chip {
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.chip:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+.chip[aria-pressed='true'] {
+  background: rgba(154, 168, 255, 0.14);
+  border-color: var(--accent);
+  color: var(--text);
+}
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.chip-count {
+  margin-left: 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .request-totals {
   margin: 0 0 10px;
 }

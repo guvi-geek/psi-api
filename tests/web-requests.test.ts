@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { renderRequests } from '../src/rows.js';
 import type { NetworkRequest } from '../src/types.js';
 import {
+  countOfType,
   DEFAULT_REQUESTS,
   requestRows,
   requestsFromParams,
@@ -64,11 +65,48 @@ describe('requests', () => {
     expect(summary).toContain(`first party ${totals.first.count} (${totals.first.bytes})`);
     expect(summary).toContain(`third party ${totals.third.count} (${totals.third.bytes})`);
     expect(totals.byType[0]!.type).toBe('Script');
+    expect(totals.byType[0]!.label).toBe('2 Scripts');
+  });
+
+  it('words each type as a count of things, and files untyped requests under Other', () => {
+    expect(countOfType(40, 'Image')).toBe('40 Images');
+    expect(countOfType(1, 'Image')).toBe('1 Image');
+    expect(countOfType(2, 'Fetch')).toBe('2 Fetches');
+    expect(countOfType(3, 'Other')).toBe('3 Other');
+    const untyped: NetworkRequest[] = [
+      { url: 'https://site.test/x', resourceType: '', transferSize: 100, party: 'first' },
+      { url: 'https://site.test/y', resourceType: 'Other', transferSize: 50, party: 'first' },
+      { url: 'https://site.test/z', resourceType: 'Image', transferSize: 900, party: 'first' },
+    ] as NetworkRequest[];
+    expect(requestTotals(untyped).byType.map((entry) => entry.label)).toEqual(['1 Image', '2 Other']);
   });
 
   it('round-trips through the URL', () => {
     const filters: RequestFilters = { party: 'third', sortBy: 'size', limit: 20 };
     expect(requestsFromParams(requestsToParams(filters))).toEqual(filters);
     expect(requestsFromParams(requestsToParams(DEFAULT_REQUESTS))).toEqual(DEFAULT_REQUESTS);
+  });
+
+  it('filters by one or more types, alongside party, order and limit', () => {
+    const urls = (filters: RequestFilters) => requestRows(REQUESTS, filters).rows.map((row) => row.url.replace(/^https:\/\//, ''));
+    expect(urls({ ...DEFAULT_REQUESTS, types: ['Script'] })).toEqual(['cdn.vendor.com/tag.js', 'site.test/app.js']);
+    expect(urls({ ...DEFAULT_REQUESTS, types: ['Font', 'Stylesheet'] })).toEqual(['site.test/missing.css', 'fonts.vendor.com/f.woff2']);
+    expect(urls({ party: 'third', sortBy: 'size', types: ['Script', 'Font'], limit: 1 })).toEqual(['cdn.vendor.com/tag.js']);
+    expect(requestRows(REQUESTS, { ...DEFAULT_REQUESTS, types: ['Script'] }).matched).toBe(2);
+    expect(requestRows(REQUESTS, { ...DEFAULT_REQUESTS, types: [] }).rows).toHaveLength(REQUESTS.length);
+    expect(requestRows(REQUESTS, { ...DEFAULT_REQUESTS, types: ['Media'] }).rows).toEqual([]);
+  });
+
+  it('keeps the type filter in the page URL', () => {
+    const filters: RequestFilters = { party: 'any', sortBy: 'start', types: ['Image', 'Font'] };
+    expect(requestsToParams(filters).get('type')).toBe('Image,Font');
+    expect(requestsFromParams(requestsToParams(filters))).toEqual(filters);
+    expect(requestsFromParams(new URLSearchParams('type=')).types).toBeUndefined();
+  });
+
+  it('shows and filters a request Chrome left untyped as Other', () => {
+    const untyped = [{ url: 'https://site.test/beacon', resourceType: '', transferSize: 0, party: 'first' }] as NetworkRequest[];
+    expect(requestRows(untyped, DEFAULT_REQUESTS).rows[0]!.type).toBe('Other');
+    expect(requestRows(untyped, { ...DEFAULT_REQUESTS, types: ['Other'] }).rows).toHaveLength(1);
   });
 });
