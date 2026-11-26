@@ -1,22 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { api, ApiError, type Health, type Targets } from './api';
-import { href, useRoute, type Route } from './router';
+'use client';
 
-function useApi<T>(path: string | null, deps: unknown[] = []) {
-  const [state, setState] = useState<{ data?: T; error?: ApiError; loading: boolean }>({ loading: true });
-  useEffect(() => {
-    if (!path) return;
-    let live = true;
-    setState({ loading: true });
-    api<T>(path)
-      .then((data) => live && setState({ data, loading: false }))
-      .catch((error: ApiError) => live && setState({ error, loading: false }));
-    return () => {
-      live = false;
-    };
-  }, [path, ...deps]);
-  return state;
-}
+import { useCallback, useState, type ReactNode } from 'react';
+import { type Health, type Targets } from './api';
+import { href, useRoute, type Route } from './router';
+import { RunForm } from './run-form';
+import { RunView } from './run-view';
+import { Sidebar } from './sidebar';
+import { useApi } from './use-api';
 
 function HealthBadge() {
   const { data, error } = useApi<Health>('/health');
@@ -28,39 +18,6 @@ function HealthBadge() {
     <span className="badge badge-warn" title="Without PSI_API_KEY in .env, runs share Google's anonymous quota and usually fail with 429.">
       No API key
     </span>
-  );
-}
-
-interface ReportRow {
-  reportId: string;
-  url: string;
-  strategy: string;
-  score: number;
-}
-
-function Sidebar({ activeId }: { activeId?: string }) {
-  const { data, error } = useApi<{ reports: ReportRow[] }>('/reports');
-  return (
-    <aside className="sidebar" aria-label="Stored reports">
-      <h2 className="sidebar-title">Reports</h2>
-      {error && <p className="muted">{error.message}</p>}
-      {data && data.reports.length === 0 && <p className="muted">Pages you measure are saved here.</p>}
-      <ul className="report-list">
-        {data?.reports.map((report) => (
-          <li key={report.reportId}>
-            <a
-              className={`report-link${report.reportId === activeId ? ' is-active' : ''}`}
-              href={href.report(report.reportId)}
-            >
-              <span className="report-url">{report.url.replace(/^https?:\/\//, '')}</span>
-              <span className="report-meta">
-                {report.strategy}, score {report.score}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ul>
-    </aside>
   );
 }
 
@@ -79,8 +36,8 @@ function Home() {
     <section className="page">
       <h1 className="page-title">Measure a public page</h1>
       <p className="lede">
-        Each report runs the page through PageSpeed Insights several times and keeps the median, the spread,
-        and the targets it misses. Open a saved report from the list to re-read it at no quota cost.
+        Enter a page above. Each report runs it through PageSpeed Insights several times and keeps the median, the
+        spread, and the targets it misses. Saved reports open from the list at no quota cost.
       </p>
       {data && (
         <div className="panel">
@@ -97,8 +54,8 @@ function Home() {
               {BUDGET_ROWS.map((row) => (
                 <tr key={row.key}>
                   <td>{row.label}</td>
-                  <td className="num">{format(data.mobile[row.key], row.unit)}</td>
-                  <td className="num">{format(data.desktop[row.key], row.unit)}</td>
+                  <td className="num">{`${data.mobile[row.key]}${row.unit}`}</td>
+                  <td className="num">{`${data.desktop[row.key]}${row.unit}`}</td>
                 </tr>
               ))}
             </tbody>
@@ -109,8 +66,6 @@ function Home() {
     </section>
   );
 }
-
-const format = (value: number, unit: string) => `${value}${unit}`;
 
 function Placeholder({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -127,19 +82,25 @@ export function App() {
 }
 
 function Shell({ route }: { route?: Route }) {
+  // Bumped when a run ends, so the list picks up the new report.
+  const [reportsVersion, setReportsVersion] = useState(0);
+  const refreshReports = useCallback(() => setReportsVersion((version) => version + 1), []);
+
   return (
     <div className="shell">
       <header className="topbar">
         <a className="brand" href={href.home()}>
           PSI - API
         </a>
+        <RunForm />
         <div className="topbar-end">
           <HealthBadge />
         </div>
       </header>
-      <Sidebar activeId={route?.name === 'report' ? route.reportId : undefined} />
+      <Sidebar activeId={route?.name === 'report' ? route.reportId : undefined} version={reportsVersion} />
       <main className="workspace" id="main">
         {route?.name === 'home' && <Home />}
+        {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
         {route?.name === 'report' && <Placeholder title={route.reportId}>The report view is built in a later step.</Placeholder>}
         {route?.name === 'compare' && <Placeholder title="Compare reports">The compare view is built in a later step.</Placeholder>}
         {route?.name === 'missing' && (

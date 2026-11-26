@@ -4,9 +4,11 @@
   --panel: #1e232c;
   --panel-raised: #252b35;
   --line: #2c3340;
+  --line-strong: #3a4352;
   --text: #e4e7ec;
   --muted: #8a93a2;
   --accent: #9aa8ff;
+  --accent-hover: #b0bbff;
   --accent-ink: #12162a;
 
   /* Lighthouse bands, reserved for verdicts. */
@@ -62,6 +64,29 @@ a:hover {
   }
 }
 
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.text-good {
+  color: var(--good);
+}
+.text-warn {
+  color: var(--warn);
+}
+.text-bad {
+  color: var(--bad);
+}
+
 /* ---------- shell ---------- */
 
 .shell {
@@ -92,6 +117,7 @@ a:hover {
   font-size: 16px;
   color: var(--text);
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 .brand:hover {
   text-decoration: none;
@@ -112,50 +138,6 @@ a:hover {
   overflow-y: auto;
   padding: 20px 12px;
   border-right: 1px solid var(--line);
-}
-
-.sidebar-title {
-  margin: 0 8px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--muted);
-}
-
-.report-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 2px;
-}
-
-.report-link {
-  display: grid;
-  gap: 2px;
-  padding: 8px;
-  border-radius: var(--r-input);
-  color: var(--text);
-}
-.report-link:hover {
-  background: var(--panel);
-  text-decoration: none;
-}
-.report-link.is-active {
-  background: var(--panel-raised);
-  box-shadow: inset 2px 0 0 var(--accent);
-}
-
-.report-url {
-  font-family: var(--mono);
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.report-meta {
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .workspace {
@@ -238,6 +220,7 @@ a:hover {
   border: 1px solid var(--line);
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
 }
 .badge::before {
   content: '';
@@ -256,12 +239,460 @@ a:hover {
   color: var(--bad);
 }
 
-/* ---------- small screens: the list stacks above the workspace ---------- */
+/* ---------- controls ---------- */
 
+.input {
+  height: 34px;
+  padding: 0 10px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  font: inherit;
+  font-size: 14px;
+}
+.input:hover {
+  border-color: var(--line-strong);
+}
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 0;
+  border-color: transparent;
+}
+.input[aria-invalid='true'] {
+  border-color: var(--bad);
+}
+.input::placeholder {
+  color: #5f6876;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.button:hover {
+  background: var(--panel-raised);
+  text-decoration: none;
+}
+.button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.button-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.button-primary:hover {
+  background: var(--accent-hover);
+}
+.button-quiet {
+  background: transparent;
+  color: var(--muted);
+}
+.button-quiet:hover,
+.button-quiet[aria-expanded='true'] {
+  background: transparent;
+  color: var(--text);
+}
+
+.form-error {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--bad);
+}
+
+/* ---------- run form (top bar) ---------- */
+
+.run-form {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 980px;
+}
+
+.run-url {
+  flex: 1;
+  min-width: 160px;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+}
+.segment {
+  position: relative;
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.segment input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.segment.is-on {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+.segment:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+}
+
+.runs-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.runs-input {
+  width: 66px;
+  text-align: right;
+}
+
+.options {
+  position: relative;
+}
+.options-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 280px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  background: var(--panel-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+}
+.field {
+  display: grid;
+  gap: 6px;
+}
+.field-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  font-size: 14px;
+  cursor: pointer;
+}
+.check input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+.check-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.run-form .form-error {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 15;
+  max-width: 560px;
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--panel-raised);
+  border: 1px solid var(--bad);
+  border-radius: var(--r-input);
+}
+
+.form-warning {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 15;
+  max-width: 560px;
+  padding: 12px 14px;
+  background: var(--panel-raised);
+  border: 1px solid var(--warn);
+  border-radius: var(--r-input);
+  font-size: 14px;
+}
+.form-warning p {
+  margin: 0 0 10px;
+}
+.form-warning-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- report list ---------- */
+
+.sidebar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 8px 12px;
+}
+.sidebar-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.sidebar-count {
+  font-size: 12px;
+  color: var(--muted);
+}
+.sidebar-filter {
+  width: calc(100% - 16px);
+  margin: 0 8px 12px;
+}
+
+.host-group + .host-group {
+  margin-top: 16px;
+}
+.host-name {
+  margin: 0 8px 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.report-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--r-input);
+  color: var(--text);
+}
+.report-link:hover {
+  background: var(--panel);
+  text-decoration: none;
+}
+.report-link.is-active {
+  background: var(--panel-raised);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.report-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.report-path {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.report-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+.report-score {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+/* ---------- a run as it happens ---------- */
+
+.run-title {
+  margin-bottom: 4px;
+}
+.run-url-line {
+  margin: 0;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.run-meta {
+  margin: 4px 0 28px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* Columns of five, read top to bottom then left to right, like the CLI. */
+.run-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+}
+.run-column {
+  display: grid;
+  grid-auto-rows: 44px;
+  gap: 6px;
+}
+.slot {
+  width: 116px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+}
+.slot-n {
+  width: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+}
+.slot-value {
+  font-size: 20px;
+  font-weight: 600;
+}
+.slot-good .slot-value {
+  color: var(--good);
+}
+.slot-warn .slot-value {
+  color: var(--warn);
+}
+.slot-bad .slot-value {
+  color: var(--bad);
+  font-size: 14px;
+}
+.slot-waiting {
+  background: transparent;
+  border-style: dashed;
+}
+.slot-active {
+  border-color: var(--accent);
+}
+/* A result landing is the one moment worth motion. */
+.slot-good,
+.slot-warn,
+.slot-bad {
+  animation: slot-land 240ms ease-out;
+}
+@keyframes slot-land {
+  from {
+    transform: scale(0.94);
+    opacity: 0.4;
+  }
+}
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  vertical-align: middle;
+  animation: spin 800ms linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.run-status {
+  margin: 20px 0 24px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.run-result {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  max-width: 640px;
+}
+.run-score {
+  display: grid;
+  justify-items: center;
+}
+.run-score-value {
+  font-size: 48px;
+  font-weight: 600;
+  line-height: 1;
+}
+.run-score-label {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.run-result-body p {
+  margin: 0 0 12px;
+}
+.run-failure {
+  max-width: 640px;
+  border-color: var(--bad);
+}
+.run-failure-message {
+  margin: 0 0 8px;
+  overflow-wrap: anywhere;
+}
+.run-failure .button {
+  margin-top: 8px;
+}
+
+/* ---------- narrower screens ---------- */
+
+@media (max-width: 1100px) {
+  .runs-unit {
+    display: none;
+  }
+}
+
+/* The form takes its own row, and the list stacks above the workspace. */
 @media (max-width: 860px) {
+  .topbar {
+    position: static;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .run-form {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+  .run-url {
+    flex-basis: 100%;
+  }
   .shell {
     grid-template-columns: 1fr;
-    grid-template-rows: var(--topbar) auto 1fr;
+    grid-template-rows: auto auto 1fr;
     grid-template-areas: 'top' 'side' 'main';
   }
   .sidebar {

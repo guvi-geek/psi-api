@@ -262,6 +262,7 @@ function startJob(params: ReportParams, log: FastifyBaseLogger, serverOptions: S
     createdAt: new Date().toISOString(),
     request: { url: params.url, strategy: params.strategy, runs: params.runs, stat: params.stat },
     progress: [],
+    save: params.save,
   };
   jobs.set(id, job);
   jobsByRequest.set(cacheKey(params), job);

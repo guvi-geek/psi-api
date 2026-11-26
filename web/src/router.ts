@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 export type Route =
   | { name: 'home' }
   | { name: 'report'; reportId: string }
+  | { name: 'run'; jobId: string }
   | { name: 'compare'; before?: string; after?: string }
   | { name: 'missing'; path: string };
 
@@ -17,6 +18,7 @@ export function parseRoute(hash: string): Route {
   const parts = path.split('/').filter(Boolean);
   if (parts.length === 0) return { name: 'home' };
   if (parts[0] === 'report' && parts[1]) return { name: 'report', reportId: decodeURIComponent(parts[1]) };
+  if (parts[0] === 'run' && parts[1]) return { name: 'run', jobId: decodeURIComponent(parts[1]) };
   if (parts[0] === 'compare') {
     return { name: 'compare', before: params.get('before') ?? undefined, after: params.get('after') ?? undefined };
   }
@@ -41,6 +43,7 @@ export function useRoute(): Route | null {
 export const href = {
   home: () => '#/',
   report: (id: string) => `#/report/${encodeURIComponent(id)}`,
+  run: (jobId: string) => `#/run/${encodeURIComponent(jobId)}`,
   compare: (before?: string, after?: string) => {
     const params = new URLSearchParams();
     if (before) params.set('before', before);

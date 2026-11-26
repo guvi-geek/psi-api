@@ -211,6 +211,7 @@ describe('runs through the server', () => {
       expect(started.statusCode).toBe(202);
       const job = await waitForJob(server, started.json().jobId);
       expect(job.status).toBe('done');
+      expect(job.save).toBe(false);
       expect(job.progress).toHaveLength(3);
       expect(job.progress.map((p: { run: number }) => p.run).sort()).toEqual([1, 2, 3]);
       expect(job.progress.every((p: { ok: boolean; score: number }) => p.ok && p.score === 80)).toBe(true);
