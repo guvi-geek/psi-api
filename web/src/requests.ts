@@ -34,13 +34,6 @@ export function requestsToParams(filters: RequestFilters): URLSearchParams {
   return params;
 }
 
-export function requestsToCli(reportId: string, filters: RequestFilters): string {
-  const args = ['npm run psi --', `--reportId ${reportId}`, filters.sortBy === 'size' ? '--requests size' : '--requests'];
-  if (filters.party !== 'any') args.push(`--party ${filters.party}`);
-  if (filters.limit !== undefined) args.push(`--limit ${filters.limit}`);
-  return args.join(' ');
-}
-
 export interface RequestRow {
   url: string;
   start: string;

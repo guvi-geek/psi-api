@@ -1355,20 +1355,7 @@ a.tab:hover {
   white-space: pre;
 }
 
-/* ---------- shared: copy button, stacked tab content ---------- */
-
-.copy-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.copy-manual {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 15;
-  width: min(520px, 80vw);
-  font-size: 12px;
-}
+/* ---------- shared: stacked tab content ---------- */
 
 .stack {
   display: grid;

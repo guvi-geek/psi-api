@@ -3,14 +3,12 @@
  * order the CLI's --requests table prints.
  */
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from '../src/cli.js';
 import { renderRequests } from '../src/rows.js';
 import type { NetworkRequest } from '../src/types.js';
 import {
   DEFAULT_REQUESTS,
   requestRows,
   requestsFromParams,
-  requestsToCli,
   requestsToParams,
   requestTotals,
   type RequestFilters,
@@ -68,12 +66,9 @@ describe('requests', () => {
     expect(totals.byType[0]!.type).toBe('Script');
   });
 
-  it('round-trips through the URL and builds the --requests command', () => {
+  it('round-trips through the URL', () => {
     const filters: RequestFilters = { party: 'third', sortBy: 'size', limit: 20 };
     expect(requestsFromParams(requestsToParams(filters))).toEqual(filters);
-    expect(requestsToCli('id', filters)).toBe('npm run psi -- --reportId id --requests size --party third --limit 20');
-    expect(requestsToCli('id', DEFAULT_REQUESTS)).toBe('npm run psi -- --reportId id --requests');
-    const parsed = parseArgs(requestsToCli('id', filters).replace(/^npm run psi -- /, '').split(' '))!;
-    expect(parsed).toMatchObject({ requests: 'size', party: 'third', limit: 20 });
+    expect(requestsFromParams(requestsToParams(DEFAULT_REQUESTS))).toEqual(DEFAULT_REQUESTS);
   });
 });

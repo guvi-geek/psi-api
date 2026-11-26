@@ -1,7 +1,6 @@
 /**
- * The Findings tab's logic. The key check: for any filters, the CLI command the
- * page offers parses (with the CLI's own parser) to the same filters the server
- * reports it applied, so the page and the terminal show the same findings.
+ * The Findings tab's logic. The key check: for any filters, the server returns
+ * the same findings, in the same order, as the CLI's own filterInsights.
  */
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,7 +11,6 @@ import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets } from '../src/targets.js';
 import { saveReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
-import { parseArgs } from '../src/cli.js';
 import { filterInsights } from '../src/insights.js';
 import { renderInsightRows } from '../src/rows.js';
 import type { AggregatedReport } from '../src/types.js';
@@ -21,7 +19,6 @@ import {
   DEFAULT_FILTERS,
   filtersFromParams,
   filtersToApiQuery,
-  filtersToCli,
   filtersToParams,
   findingRow,
   insightFacts,
@@ -56,41 +53,6 @@ afterAll(async () => {
   else process.env.PSI_DATA_DIR = previousDataDir;
 });
 
-const FILTER_FIELDS = [
-  'search',
-  'party',
-  'sortBy',
-  'order',
-  'includeFlaky',
-] as const;
-
-/** Splits a command line as a POSIX shell would for these args: spaces, "quotes", \" escapes. */
-function shellSplit(line: string): string[] {
-  const args: string[] = [];
-  let current = '';
-  let quoted = false;
-  let started = false;
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i]!;
-    if (quoted && char === '\\' && line[i + 1] === '"') {
-      current += '"';
-      i += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-      started = true;
-    } else if (char === ' ' && !quoted) {
-      if (started) args.push(current);
-      current = '';
-      started = false;
-    } else {
-      current += char;
-      started = true;
-    }
-  }
-  if (started) args.push(current);
-  return args;
-}
-
 const CASES: Array<Partial<Filters>> = [
   {},
   { search: 'third party "cookies"' },
@@ -101,7 +63,7 @@ const CASES: Array<Partial<Filters>> = [
   { sortBy: 'firstPartyShare' },
 ];
 
-describe('the CLI command and the server agree', () => {
+describe('the server filters like the CLI', () => {
   for (const partial of CASES) {
     it(`for ${JSON.stringify(partial)}`, async () => {
       const filters: Filters = { ...DEFAULT_FILTERS, ...partial };
@@ -112,30 +74,13 @@ describe('the CLI command and the server agree', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
 
-      const argv = shellSplit(filtersToCli(REPORT_ID, filters).replace(/^npm run psi -- /, ''));
-      const cli = parseArgs(argv)!;
-      for (const field of FILTER_FIELDS) {
-        const fromCli = cli[field] === undefined || (Array.isArray(cli[field]) && cli[field].length === 0) ? undefined : cli[field];
-        const fromServer = body.filters[field] === undefined || (Array.isArray(body.filters[field]) && body.filters[field].length === 0) ? undefined : body.filters[field];
-        expect(fromServer, field).toEqual(fromCli);
-      }
-
       // Same filters through the CLI's own filter call: same ids, same order.
       const cliIds = filterInsights(report.insights, {
-        group: cli.group,
-        minSavingsMs: cli.minSavingsMs,
-        minSavingsBytes: cli.minSavingsBytes,
-        maxScore: cli.maxScore,
-        metric: cli.metric,
-        search: cli.search,
-        id: cli.id,
-        hasItems: cli.hasItems,
-        party: cli.party,
-        minFirstPartyRatio: cli.minFirstPartyRatio,
-        sortBy: cli.sortBy,
-        order: cli.order,
-        limit: cli.limit,
-        includeFlaky: cli.includeFlaky,
+        search: filters.search.trim() || undefined,
+        party: filters.party,
+        sortBy: filters.sortBy,
+        order: filters.order,
+        includeFlaky: !filters.noFlaky,
       }).map((insight) => insight.id);
       expect(body.insights.map((insight: { id: string }) => insight.id)).toEqual(cliIds);
     });

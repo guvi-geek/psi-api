@@ -6,7 +6,6 @@ import type { MeasurementValidity } from '../../src/validity';
 import { environmentLine, lighthouseLabel } from '../../src/render';
 import { api, ApiError, startRun } from './api';
 import {
-  cliCommand,
   fieldRows,
   metricRows,
   notFound,
@@ -17,7 +16,6 @@ import {
   type SpreadItem,
 } from './overview';
 import { rerunRequest } from './reanalyze';
-import { CopyButton } from './copy-button';
 import { FindingsView } from './findings-view';
 import { RequestsView } from './requests-view';
 import { href } from './router';
@@ -140,7 +138,6 @@ function ReportHeader({ report }: { report: AggregatedReport }) {
           >
             {starting ? 'Starting' : 'Re-analyze'}
           </button>
-          <CopyButton text={cliCommand(report.reportId)} label="Copy CLI command" />
         </div>
       </div>
       {error && (

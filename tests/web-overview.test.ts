@@ -5,7 +5,6 @@ import { applyTargets } from '../src/targets.js';
 import { passCount, targetBar } from '../src/render.js';
 import type { AggregatedReport, NetworkRequest } from '../src/types.js';
 import {
-  cliCommand,
   fieldRows,
   metricRows,
   notFound,
@@ -161,15 +160,11 @@ describe('fieldRows', () => {
   });
 });
 
-describe('statsTable and cliCommand', () => {
+describe('statsTable', () => {
   it('shows the score and each metric under mean, median and mode', () => {
     const r = report();
     const table = statsTable(r);
     expect(table[0]).toMatchObject({ key: 'score', median: String(r.stats.median.score) });
     expect(table.map((row) => row.key)).toEqual(['score', 'fcp', 'lcp', 'speedIndex', 'tbt', 'cls']);
-  });
-
-  it('gives the free re-read command', () => {
-    expect(cliCommand('2026-11-26T00-00-00Z-mobile')).toBe('npm run psi -- --reportId 2026-11-26T00-00-00Z-mobile');
   });
 });

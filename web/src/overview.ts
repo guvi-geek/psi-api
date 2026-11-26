@@ -230,7 +230,3 @@ export function statsTable(report: Report): Array<{ key: string; name: string; m
     });
 }
 
-/** The terminal command that re-reads this report for free. */
-export function cliCommand(reportId: string): string {
-  return `npm run psi -- --reportId ${reportId}`;
-}

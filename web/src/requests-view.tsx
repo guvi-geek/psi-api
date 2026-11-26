@@ -2,9 +2,8 @@
 
 import { useEffect, useId, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
-import { CopyButton } from './copy-button';
 import { href } from './router';
-import { requestRows, requestsFromParams, requestsToCli, requestsToParams, requestTotals, type RequestFilters } from './requests';
+import { requestRows, requestsFromParams, requestsToParams, requestTotals, type RequestFilters } from './requests';
 
 /** The CLI's --requests: every request the median run made. */
 export function RequestsView({ report, params }: { report: AggregatedReport; params: URLSearchParams }) {
@@ -98,8 +97,6 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
               }}
             />
           </label>
-          <span className="filter-spacer" />
-          <CopyButton text={requestsToCli(report.reportId, filters)} label="Copy as CLI" />
         </div>
       </div>
 

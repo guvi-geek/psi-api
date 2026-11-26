@@ -8,7 +8,6 @@ import {
   DEFAULT_FILTERS,
   filtersFromParams,
   filtersToApiQuery,
-  filtersToCli,
   filtersToParams,
   findingRow,
   insightFacts,
@@ -17,7 +16,6 @@ import {
   parseDescription,
   type Filters,
 } from './findings';
-import { CopyButton } from './copy-button';
 import { href } from './router';
 
 const SORT_LABELS = {
@@ -78,7 +76,6 @@ export function FindingsView({ report, params }: { report: AggregatedReport; par
         update={update}
         active={active}
         clear={() => clearFilters(true)}
-        cli={filtersToCli(report.reportId, filters)}
       />
 
       <p className="findings-count" aria-live="polite">
@@ -122,9 +119,8 @@ function FilterBar(props: {
   update: (patch: Partial<Filters>) => void;
   active: number;
   clear: () => void;
-  cli: string;
 }) {
-  const { filters, update, active, clear, cli } = props;
+  const { filters, update, active, clear } = props;
   const ids = useId();
 
   return (
@@ -200,7 +196,6 @@ function FilterBar(props: {
             Clear {active}
           </button>
         )}
-        <CopyButton text={cli} label="Copy as CLI" />
       </div>
     </div>
   );

@@ -66,17 +66,6 @@ export function filtersToApiQuery(filters: Filters): string {
   return params.toString();
 }
 
-/** The same view as a terminal command, with only the flags that change it. */
-export function filtersToCli(reportId: string, filters: Filters): string {
-  const args = ['npm run psi --', `--reportId ${reportId}`];
-  if (filters.search.trim()) args.push(`--search "${filters.search.trim().replace(/"/g, '\\"')}"`);
-  if (filters.party !== 'any') args.push(`--party ${filters.party}`);
-  if (filters.sortBy !== 'savingsMs') args.push(`--sortBy ${filters.sortBy}`);
-  if (filters.order !== 'desc') args.push(`--order ${filters.order}`);
-  if (filters.noFlaky) args.push('--noFlaky');
-  return args.join(' ');
-}
-
 /** How many filters are set, for the "Clear" control. Sorting is not a filter. */
 export function activeFilterCount(filters: Filters): number {
   let count = 0;
