@@ -1,0 +1,277 @@
+/* psi-api UI: one dark theme. Colour means status; the accent means "you can act on this". */
+:root {
+  --bg: #161a21;
+  --panel: #1e232c;
+  --panel-raised: #252b35;
+  --line: #2c3340;
+  --text: #e4e7ec;
+  --muted: #8a93a2;
+  --accent: #9aa8ff;
+  --accent-ink: #12162a;
+
+  /* Lighthouse bands, reserved for verdicts. */
+  --good: #4cc38a;
+  --warn: #e5b454;
+  --bad: #f2716b;
+
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --r-input: 6px;
+  --r-panel: 10px;
+  --sidebar: 300px;
+  --topbar: 56px;
+
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 15px/1.5 var(--sans);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---------- shell ---------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) 1fr;
+  grid-template-rows: var(--topbar) 1fr;
+  grid-template-areas:
+    'top top'
+    'side main';
+  min-height: 100vh;
+}
+
+.topbar {
+  grid-area: top;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 0 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text);
+  letter-spacing: 0.01em;
+}
+.brand:hover {
+  text-decoration: none;
+}
+
+.topbar-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sidebar {
+  grid-area: side;
+  position: sticky;
+  top: var(--topbar);
+  height: calc(100vh - var(--topbar));
+  overflow-y: auto;
+  padding: 20px 12px;
+  border-right: 1px solid var(--line);
+}
+
+.sidebar-title {
+  margin: 0 8px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.report-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.report-link {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--r-input);
+  color: var(--text);
+}
+.report-link:hover {
+  background: var(--panel);
+  text-decoration: none;
+}
+.report-link.is-active {
+  background: var(--panel-raised);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.report-url {
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.workspace {
+  grid-area: main;
+  min-width: 0;
+  padding: 32px 40px 64px;
+}
+
+/* ---------- content ---------- */
+
+.page {
+  max-width: 960px;
+}
+
+.page-title {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.lede {
+  margin: 0 0 28px;
+  max-width: 68ch;
+  color: var(--muted);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  padding: 20px;
+}
+
+.panel-title {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.table th,
+.table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.table th {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.table tr:last-child td {
+  border-bottom: 0;
+}
+.table .num {
+  text-align: right;
+}
+
+.note,
+.muted {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.sidebar .muted {
+  margin: 0 8px;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.badge-good {
+  color: var(--good);
+}
+.badge-warn {
+  color: var(--warn);
+}
+.badge-bad {
+  color: var(--bad);
+}
+
+/* ---------- small screens: the list stacks above the workspace ---------- */
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: var(--topbar) auto 1fr;
+    grid-template-areas: 'top' 'side' 'main';
+  }
+  .sidebar {
+    position: static;
+    height: auto;
+    max-height: 240px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .workspace {
+    padding: 24px 16px 48px;
+  }
+}

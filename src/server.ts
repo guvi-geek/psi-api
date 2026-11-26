@@ -5,7 +5,10 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify';
-import { pathToFileURL } from 'node:url';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import type {
   AggregatedReport,
@@ -168,6 +171,54 @@ function compact(query: unknown): Record<string, unknown> {
 export interface ServerOptions {
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
+  /** Built web UI to serve at `/`. Defaults to web/dist; skipped when it has not been built. */
+  webDir?: string;
+}
+
+/** web/dist, from either src/server.ts or dist/server.js: both sit one level under the repo root. */
+const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json',
+};
+
+/**
+ * Serves the built UI: `/` is index.html, `/assets/*` are Vite's hashed files.
+ * The UI routes with the URL hash, so no API path is ever shadowed.
+ */
+function registerWebUi(app: FastifyInstance, webDir: string): void {
+  const indexFile = path.join(webDir, 'index.html');
+  if (!existsSync(indexFile)) return;
+  const assetsDir = path.join(webDir, 'assets');
+
+  app.get('/', async (_req, reply) =>
+    reply
+      .header('cache-control', 'no-cache')
+      .type(MIME['.html']!)
+      .send(await readFile(indexFile)),
+  );
+
+  app.get<{ Params: { '*': string } }>('/assets/*', async (req, reply) => {
+    const file = path.resolve(assetsDir, req.params['*']);
+    const type = MIME[path.extname(file).toLowerCase()];
+    if (!file.startsWith(assetsDir + path.sep) || !type) {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'no such asset' } });
+    }
+    try {
+      const body = await readFile(file);
+      return reply.header('cache-control', 'public, max-age=31536000, immutable').type(type).send(body);
+    } catch {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'no such asset' } });
+    }
+  });
 }
 
 async function produceReport(
@@ -530,6 +581,8 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   // The budgets every verdict is graded against. Read-only.
   app.get('/targets', async () => loadTargets());
 
+  registerWebUi(app, options.webDir ?? DEFAULT_WEB_DIR);
+
   app.get<{ Params: { jobId: string } }>('/jobs/:jobId', async (req, reply) => {
     const job = jobs.get(req.params.jobId);
     if (!job) {
@@ -560,7 +613,12 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
 
   app
     .listen({ port, host })
-    .then(() => app.log.info({ host, port }, 'psi-api listening'))
+    .then(() => {
+      app.log.info({ host, port }, 'psi-api listening');
+      if (existsSync(path.join(DEFAULT_WEB_DIR, 'index.html'))) {
+        app.log.info(`UI ready at http://${host}:${port}/`);
+      }
+    })
     .catch((error) => {
       app.log.error(error);
       process.exit(1);
