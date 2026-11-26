@@ -21,6 +21,7 @@ import {
   type Group,
   type Metric,
 } from './findings';
+import { CopyButton } from './copy-button';
 import { METRIC_SHORT } from './overview';
 import { href } from './router';
 
@@ -164,17 +165,6 @@ function FilterBar(props: {
 }) {
   const { filters, update, moreOpen, setMoreOpen, active, clear, clearCount, cli } = props;
   const ids = useId();
-  const [copied, setCopied] = useState<'idle' | 'copied' | 'manual'>('idle');
-
-  async function copyCli() {
-    try {
-      await navigator.clipboard.writeText(cli);
-      setCopied('copied');
-      setTimeout(() => setCopied('idle'), 1600);
-    } catch {
-      setCopied('manual');
-    }
-  }
 
   return (
     <div className="filter-bar panel">
@@ -288,21 +278,8 @@ function FilterBar(props: {
             Clear {active}
           </button>
         )}
-        <button type="button" className="button" onClick={copyCli} title={cli}>
-          {copied === 'copied' ? 'Copied' : 'Copy as CLI'}
-        </button>
+        <CopyButton text={cli} label="Copy as CLI" />
       </div>
-
-      {copied === 'manual' && (
-        <input
-          className="input mono cli-text"
-          readOnly
-          value={cli}
-          aria-label="CLI command to copy"
-          autoFocus
-          onFocus={(event) => event.target.select()}
-        />
-      )}
 
       {moreOpen && (
         <div className="more-filters" id={`${ids}-more`} key={clearCount}>

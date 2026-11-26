@@ -16,7 +16,11 @@ import {
   type MetricRow,
   type SpreadItem,
 } from './overview';
+import { CopyButton } from './copy-button';
 import { FindingsView } from './findings-view';
+import { JsonView } from './json-view';
+import { RequestsView } from './requests-view';
+import { WorkQueueView } from './workqueue-view';
 import { href } from './router';
 import { formatWhen } from './run';
 
@@ -66,11 +70,14 @@ export function ReportView({ reportId, params }: { reportId: string; params: URL
   }
 
   const { report, validity } = state.data;
-  const tab = params.get('tab') === 'findings' ? 'findings' : 'overview';
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'findings', label: `Findings ${report.insights.length}` },
+    { id: 'queue', label: 'Work queue' },
+    { id: 'requests', label: `Requests ${report.requests?.length ?? 0}` },
+    { id: 'json', label: 'JSON' },
   ] as const;
+  const tab = tabs.find((entry) => entry.id === params.get('tab'))?.id ?? 'overview';
   return (
     <section className="page page-wide">
       <ReportHeader report={report} />
@@ -88,23 +95,14 @@ export function ReportView({ reportId, params }: { reportId: string; params: URL
       </nav>
       {tab === 'overview' && <Overview report={report} validity={validity} />}
       {tab === 'findings' && <FindingsView report={report} params={params} />}
+      {tab === 'queue' && <WorkQueueView report={report} params={params} />}
+      {tab === 'requests' && <RequestsView report={report} params={params} />}
+      {tab === 'json' && <JsonView report={report} />}
     </section>
   );
 }
 
 function ReportHeader({ report }: { report: AggregatedReport }) {
-  const [copy, setCopy] = useState<'idle' | 'copied' | 'manual'>('idle');
-  const command = cliCommand(report.reportId);
-  async function copyCommand() {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopy('copied');
-      setTimeout(() => setCopy('idle'), 1600);
-    } catch {
-      // The browser refused the clipboard: show the command, selected, to copy by hand.
-      setCopy('manual');
-    }
-  }
   const generated = new Date(report.generatedAt);
   return (
     <header className="report-header">
@@ -118,21 +116,7 @@ function ReportHeader({ report }: { report: AggregatedReport }) {
           </time>
         </p>
       </div>
-      <div className="copy-cli">
-        <button type="button" className="button" onClick={copyCommand} title={command}>
-          {copy === 'copied' ? 'Copied' : 'Copy CLI command'}
-        </button>
-        {copy === 'manual' && (
-          <input
-            className="input copy-cli-text mono"
-            readOnly
-            value={command}
-            aria-label="CLI command to copy"
-            autoFocus
-            onFocus={(event) => event.target.select()}
-          />
-        )}
-      </div>
+      <CopyButton text={cliCommand(report.reportId)} label="Copy CLI command" />
     </header>
   );
 }
