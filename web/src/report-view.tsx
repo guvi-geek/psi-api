@@ -20,7 +20,7 @@ import { FindingsView } from './findings-view';
 import { RequestsView } from './requests-view';
 import { SeoView } from './seo-view';
 import { href } from './router';
-import { formatWhen, measuredAt } from './run';
+import { columnsOf, formatWhen, measuredAt } from './run';
 import { useApi } from './use-api';
 
 interface Loaded {
@@ -192,10 +192,7 @@ function Overview({ report, validity }: { report: AggregatedReport; validity?: M
         </div>
       )}
 
-      <div className="summary">
-        <ScoreBlock report={report} />
-        <VerdictBlock report={report} />
-      </div>
+      <SummaryBlock report={report} />
 
       <MetricsTable report={report} />
 
@@ -222,50 +219,81 @@ function Spread({ items }: { items: SpreadItem[] }) {
   );
 }
 
-function ScoreBlock({ report }: { report: AggregatedReport }) {
+/** Score and verdict in one panel: the two numbers a reader looks for first. */
+function SummaryBlock({ report }: { report: AggregatedReport }) {
   const score = scoreSummary(report);
+  // Every failing target: there are only a handful, and the table has room.
+  const verdict = verdictSummary(report, Infinity);
+  // The score has its own column, so the list names only the metrics.
+  const failingMetrics = verdict.named.filter((entry) => entry.metric !== 'score');
+  const range = score.spread.find((item) => item.label === 'Range')?.value;
+  const meta = [
+    score.target !== undefined ? `target ${score.target}` : null,
+    range ? `range ${range}` : null,
+  ].filter(Boolean);
   return (
-    <div className="panel score-block">
-      <div className="score-line">
-        <span className={`score-value text-${score.severity}`}>{score.value}</span>
-        <span className="score-of">/ 100</span>
-        {score.target !== undefined && <span className="score-target">target {score.target}</span>}
-      </div>
-      <p className="score-caption">{report.stat} score across {report.runsSucceeded} runs</p>
-      <Spread items={score.spread} />
-      {score.bimodalNote && <p className="note-warn">The score splits into two groups: {score.bimodalNote}</p>}
-    </div>
-  );
-}
-
-function VerdictBlock({ report }: { report: AggregatedReport }) {
-  const verdict = verdictSummary(report);
-  return (
-    <div className="panel verdict-block">
-      <p className="verdict-line">
-        <span className={`verdict-word text-${verdict.word === 'PASS' ? 'good' : 'bad'}`}>{verdict.word}</span>
-        <span className="verdict-scope">
-          {verdict.failing} of {verdict.total} target{verdict.total === 1 ? '' : 's'} failing
-        </span>
-      </p>
-      {verdict.named.length > 0 ? (
-        <ul className="verdict-list">
-          {verdict.named.map((entry) => (
-            <li key={entry.metric}>{entry.text}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="muted">Every target holds on at least 90% of runs.</p>
-      )}
-      {verdict.tailOnly && (
-        <p className="note-warn">Every median is inside its target, but too few individual runs are. Targets are graded on the tail.</p>
-      )}
-      {verdict.blockedBy.map((reason) => (
-        <p key={reason} className="note-warn">
-          Not fixable from the frontend: {reason}
+    <div className="panel summary">
+      <div className="summary-cell summary-score">
+        <p className="summary-label">
+          Score · {report.stat} of {report.runsSucceeded} runs
         </p>
-      ))}
-      <p className="verdict-rule">FAIL means more than half the targets fail. A target fails when fewer than 90% of runs hold it.</p>
+        <p className="score-line">
+          <span className={`score-value text-${score.severity}`}>{score.value}</span>
+          <span className="score-of">/ 100</span>
+        </p>
+        <p className="score-meta">{meta.join(' · ')}</p>
+      </div>
+
+      <div className="summary-cell summary-verdict">
+        <p className="summary-label">Verdict</p>
+        <p
+          className={`verdict-word text-${verdict.word === 'PASS' ? 'good' : 'bad'}`}
+          title="FAIL means more than half the targets fail. A target fails when fewer than 90% of runs hold it."
+        >
+          {verdict.word}
+        </p>
+        <p className="verdict-scope">
+          {verdict.failing} of {verdict.total} target{verdict.total === 1 ? '' : 's'} failing
+        </p>
+      </div>
+
+      <div className="summary-cell summary-failing">
+        <p className="summary-label">{failingMetrics.length > 0 ? 'Failing targets' : 'Targets'}</p>
+        {failingMetrics.length > 0 ? (
+          // Two per column, columns side by side; each divider runs the full height.
+          <div className="failing-cols">
+            {columnsOf(failingMetrics, 2).map((column) => (
+              <ul key={column[0]!.metric} className="failing-col">
+                {column.map((entry) => (
+                  <li key={entry.metric} title={entry.text}>
+                    <span className="failing-name">{entry.short}</span>
+                    <span className="failing-sep" aria-hidden="true">-</span>
+                    <span className="failing-value text-bad">{entry.actual}</span>
+                  </li>
+                ))}
+              </ul>
+            ))}
+          </div>
+        ) : (
+          <p className="verdict-ok">
+            {verdict.failing > 0 ? 'Every metric holds; only the score misses its target.' : 'Every target holds on at least 90% of runs.'}
+          </p>
+        )}
+      </div>
+
+      {(score.bimodalNote || verdict.tailOnly || verdict.blockedBy.length > 0) && (
+        <div className="summary-notes">
+          {score.bimodalNote && <p className="note-warn">The score splits into two groups: {score.bimodalNote}</p>}
+          {verdict.tailOnly && (
+            <p className="note-warn">Every median is inside its target, but too few individual runs are. Targets are graded on the tail.</p>
+          )}
+          {verdict.blockedBy.map((reason) => (
+            <p key={reason} className="note-warn">
+              Not fixable from the frontend: {reason}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -389,10 +417,6 @@ function FieldBlock({ report }: { report: AggregatedReport }) {
               ))}
             </tbody>
           </table>
-          <p className="note">
-            Green is at or under the target, red is over it. A metric with a real-user target (config/targets.json,
-            field) is judged on it; the rest use the lab targets. A metric with no target stays plain.
-          </p>
         </>
       ) : (
         <p className="muted">

@@ -935,37 +935,120 @@ a:hover {
   margin-top: 4px;
 }
 
+/* Score | Verdict | Failing targets: three labelled columns split by hairlines. */
 .summary {
   display: grid;
-  grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
-  gap: 16px;
+  grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 1fr) minmax(max-content, 2fr);
+  padding: 18px 0;
+}
+.summary-cell {
+  min-width: 0;
+  padding: 0 24px;
+}
+.summary-cell + .summary-cell {
+  border-left: 1px solid var(--line);
+}
+.summary-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .score-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: 6px;
+  margin: 0;
 }
 .score-value {
-  font-size: 56px;
+  font-size: 44px;
   font-weight: 600;
   line-height: 1;
 }
 .score-of {
-  font-size: 16px;
+  font-size: 15px;
   color: var(--muted);
 }
-.score-target {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--muted);
-}
-.score-caption {
-  margin: 8px 0 14px;
-  font-size: 13px;
+.score-meta {
+  margin: 8px 0 0;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--muted);
 }
 
+.verdict-word {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+.verdict-scope {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Failing metrics: columns of two, spread across the cell, each divider full height. */
+.failing-cols {
+  display: flex;
+}
+.failing-col {
+  flex: 1 1 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  margin: 0;
+  padding: 0 18px;
+  list-style: none;
+}
+.failing-col:first-child {
+  padding-left: 0;
+}
+.failing-col:last-child {
+  padding-right: 0;
+}
+.failing-col + .failing-col {
+  border-left: 1px solid var(--line-strong);
+}
+.failing-col li {
+  display: grid;
+  grid-template-columns: 32px auto auto;
+  justify-content: start;
+  align-items: baseline;
+  column-gap: 8px;
+  white-space: nowrap;
+}
+.failing-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.failing-sep {
+  color: var(--muted);
+}
+.failing-value {
+  font-family: var(--mono);
+  font-size: 14px;
+}
+.verdict-ok {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.summary-notes {
+  grid-column: 1 / -1;
+  margin: 16px 24px 0;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+/* A metric's range, in its detail row. */
 .spread {
   display: flex;
   flex-wrap: wrap;
@@ -982,34 +1065,6 @@ a:hover {
 .spread dd {
   margin: 0;
   font-size: 14px;
-}
-
-.verdict-line {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 0 0 12px;
-}
-.verdict-word {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.verdict-scope {
-  color: var(--muted);
-}
-.verdict-list {
-  margin: 0 0 12px;
-  padding-left: 18px;
-  font-size: 14px;
-}
-.verdict-list li + li {
-  margin-top: 4px;
-}
-.verdict-rule {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: var(--muted);
 }
 
 .note-warn {
@@ -1668,7 +1723,55 @@ a.tab:hover {
 /* ---------- narrower screens ---------- */
 
 @media (max-width: 1100px) {
-  .summary,
+  .summary {
+    grid-template-columns: minmax(max-content, 1fr) minmax(max-content, 2fr);
+    row-gap: 16px;
+  }
+  .summary-score {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 16px;
+    margin: 0 24px;
+    padding: 0 0 16px;
+    border-bottom: 1px solid var(--line);
+  }
+  .summary-score .summary-label {
+    flex-basis: 100%;
+  }
+  .summary-score .score-meta {
+    max-width: none;
+    margin: 0;
+  }
+  .summary-cell.summary-verdict {
+    border-left: 0;
+  }
+}
+
+/* Phones: everything stacks. */
+@media (max-width: 560px) {
+  .summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .summary-cell.summary-failing {
+    margin: 0 24px;
+    padding: 16px 0 0;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  /* No room for divided columns: the metrics flow two to a row. */
+  .failing-cols {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 6px 28px;
+  }
+  .failing-col {
+    display: contents;
+  }
+}
+
+@media (max-width: 1100px) {
   .details-grid {
     grid-template-columns: 1fr;
   }

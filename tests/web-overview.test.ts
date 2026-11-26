@@ -45,6 +45,8 @@ describe('verdictSummary', () => {
     expect(verdict.named[0]!.metric).toBe('lcp');
     expect(verdict.named[0]!.text).toMatch(/^LCP \d+ms vs 2500ms \(0\/10 runs in target\)$/);
     expect(verdict.named.map((entry) => entry.metric)).toContain('tbt');
+    expect(verdictSummary(r, Infinity).named).toHaveLength(verdict.failing);
+    expect(verdictSummary(r, 1).named.map((entry) => entry.metric)).toEqual(['lcp']);
   });
 
   it('flags the tail-only failure: TBT median inside budget, 2 of 10 runs over', () => {
@@ -154,6 +156,9 @@ describe('fieldRows', () => {
       },
     };
     const rows = fieldRows(r)!;
+    // Same order as the metrics table: FCP, LCP, INP where TBT sits, CLS, then TTFB.
+    expect(rows.map((row) => row.key)).toEqual(['fcp', 'lcp', 'inp', 'cls', 'ttfb']);
+    expect(metricRows(r).map((row) => row.key)).toEqual(['fcp', 'lcp', 'speedIndex', 'tbt', 'cls']);
     expect(rows.find((row) => row.key === 'lcp')!.value).toBe('2900ms');
     expect(rows.find((row) => row.key === 'cls')!.value).toBe('0.050');
     expect(rows.find((row) => row.key === 'inp')!.value).toBe('Not in CrUX');

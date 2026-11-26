@@ -59,27 +59,44 @@ export interface VerdictSummary {
   word: 'PASS' | 'FAIL';
   failing: number;
   total: number;
-  /** Up to four failing targets, worst relative overshoot first. */
-  named: Array<{ metric: string; text: string }>;
+  /** Failing targets, worst relative overshoot first, up to `limit`. */
+  named: Array<{
+    metric: string;
+    /** The CLI's sentence, e.g. "LCP 3301ms vs 2500ms (0/10 runs in target)". */
+    text: string;
+    short: string;
+    actual: string;
+    target: string;
+    /** "0/10", or undefined when runs were not counted. */
+    runs?: string;
+  }>;
   /** Every median is inside budget but too few runs are: graded on the tail. */
   tailOnly: boolean;
   /** Budgets the server round trip alone already exceeds. */
   blockedBy: string[];
 }
 
-export function verdictSummary(report: Report): VerdictSummary {
+/** `limit` is how many failing targets to name; the CLI names four. */
+export function verdictSummary(report: Report, limit = 4): VerdictSummary {
   const gaps = report.targets.gaps;
   const failing = gaps.filter((gap) => !gap.meets);
   const named = failing
     .slice()
     .sort((a, b) => overshoot(b) - overshoot(a))
-    .slice(0, 4)
+    .slice(0, limit)
     .map((gap) => {
       const count = passCount(gap);
       const held = count === '—' ? '' : ` (${count} runs in target)`;
+      const short = METRIC_SHORT[gap.metric] ?? gap.metric;
+      const actual = metricValue(gap.metric, gap.actual);
+      const target = metricValue(gap.metric, gap.target);
       return {
         metric: gap.metric,
-        text: `${METRIC_SHORT[gap.metric] ?? gap.metric} ${metricValue(gap.metric, gap.actual)} vs ${metricValue(gap.metric, gap.target)}${held}`,
+        text: `${short} ${actual} vs ${target}${held}`,
+        short,
+        actual,
+        target,
+        ...(count === '—' ? {} : { runs: count }),
       };
     });
   return {
@@ -208,6 +225,18 @@ export interface FieldRow {
   severity?: Severity;
 }
 
+/** The lab metric each real-user metric stands in for: INP is the field measure of responsiveness, like TBT. */
+const FIELD_FOR_LAB: Partial<Record<string, 'fcp' | 'lcp' | 'cls' | 'inp'>> = { fcp: 'fcp', lcp: 'lcp', tbt: 'inp', cls: 'cls' };
+
+/**
+ * The CrUX rows in the metrics table's order, so the two read side by side:
+ * FCP, LCP, INP (where TBT sits), CLS, then TTFB, which has no lab row.
+ */
+export const FIELD_ORDER: Array<'fcp' | 'lcp' | 'cls' | 'inp' | 'ttfb'> = [
+  ...METRIC_ROWS.map((row) => FIELD_FOR_LAB[row.key]).filter((key) => key !== undefined),
+  'ttfb',
+];
+
 /**
  * CrUX real-user p75 for the measured URL. Each is judged on its CrUX-only
  * target (config/targets.json `field`, e.g. INP and TTFB) when there is one,
@@ -215,7 +244,7 @@ export interface FieldRow {
  */
 export function fieldRows(report: Report, fieldTargets: Record<string, number | undefined> = {}): FieldRow[] | null {
   if (!fieldDataPresent(report.fieldData)) return null;
-  return (['lcp', 'fcp', 'cls', 'inp', 'ttfb'] as const).map((key) => {
+  return FIELD_ORDER.map((key) => {
     const value = fieldP75(report.fieldData, key);
     const target = fieldTargets[key] ?? report.targets.targets[key];
     // Every field metric is lower-is-better.
