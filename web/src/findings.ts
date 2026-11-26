@@ -9,18 +9,12 @@ import { formatBytes, savingsLabel } from '../../src/render';
 import { renderInsightRows } from '../../src/rows';
 import { METRIC_SHORT } from './overview';
 
-export const GROUPS = ['opportunity', 'diagnostic', 'passed', 'informative'] as const;
-export const METRICS = ['lcp', 'tbt', 'cls', 'fcp', 'speedIndex', 'tti', 'ttfb', 'inp'] as const;
 export const SORT_FIELDS = ['savingsMs', 'savingsBytes', 'score', 'firstPartyShare'] as const;
 
-export type Group = (typeof GROUPS)[number];
-export type Metric = (typeof METRICS)[number];
 export type SortField = (typeof SORT_FIELDS)[number];
 
 /** Every CLI insight filter. Absent means "not set", like a flag left off. */
 export interface Filters {
-  group: Group[];
-  metric: Metric[];
   search: string;
   id: string[];
   minSavingsMs?: number;
@@ -38,8 +32,6 @@ export interface Filters {
 }
 
 export const DEFAULT_FILTERS: Filters = {
-  group: [],
-  metric: [],
   search: '',
   id: [],
   party: 'any',
@@ -64,11 +56,9 @@ const list = (value: string | null) =>
     .map((part) => part.trim())
     .filter(Boolean);
 
-/** Filters from the page URL (#/report/<id>?tab=findings&metric=lcp…). Unknown values are dropped. */
+/** Filters from the page URL (#/report/<id>?tab=findings&party=first…). Unknown values are dropped. */
 export function filtersFromParams(params: URLSearchParams): Filters {
   const filters: Filters = { ...DEFAULT_FILTERS };
-  filters.group = list(params.get('group')).filter((g): g is Group => (GROUPS as readonly string[]).includes(g));
-  filters.metric = list(params.get('metric')).filter((m): m is Metric => (METRICS as readonly string[]).includes(m));
   filters.search = params.get('search') ?? '';
   filters.id = list(params.get('id'));
   for (const key of NUMBER_KEYS) {
@@ -91,8 +81,6 @@ export function filtersFromParams(params: URLSearchParams): Filters {
 /** The page URL's form of the filters: only what differs from the defaults. */
 export function filtersToParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
-  if (filters.group.length) params.set('group', filters.group.join(','));
-  if (filters.metric.length) params.set('metric', filters.metric.join(','));
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.id.length) params.set('id', filters.id.join(','));
   for (const key of NUMBER_KEYS) if (filters[key] !== undefined) params.set(key, String(filters[key]));
@@ -107,8 +95,6 @@ export function filtersToParams(filters: Filters): URLSearchParams {
 /** The server's query for GET /report/:id/insights. */
 export function filtersToApiQuery(filters: Filters): string {
   const params = new URLSearchParams();
-  if (filters.group.length) params.set('group', filters.group.join(','));
-  if (filters.metric.length) params.set('metric', filters.metric.join(','));
   if (filters.search.trim()) params.set('search', filters.search.trim());
   if (filters.id.length) params.set('id', filters.id.join(','));
   for (const key of NUMBER_KEYS) if (filters[key] !== undefined) params.set(key, String(filters[key]));
@@ -123,8 +109,6 @@ export function filtersToApiQuery(filters: Filters): string {
 /** The same view as a terminal command, with only the flags that change it. */
 export function filtersToCli(reportId: string, filters: Filters): string {
   const args = ['npm run psi --', `--reportId ${reportId}`];
-  if (filters.group.length) args.push(`--group ${filters.group.join(',')}`);
-  if (filters.metric.length) args.push(`--metric ${filters.metric.join(',')}`);
   if (filters.search.trim()) args.push(`--search "${filters.search.trim().replace(/"/g, '\\"')}"`);
   if (filters.id.length) args.push(`--id ${filters.id.join(',')}`);
   for (const key of NUMBER_KEYS) if (filters[key] !== undefined) args.push(`--${key} ${filters[key]}`);
@@ -140,8 +124,6 @@ export function filtersToCli(reportId: string, filters: Filters): string {
 /** How many filters are set, for the "Clear" control. Sorting is not a filter. */
 export function activeFilterCount(filters: Filters): number {
   let count = 0;
-  if (filters.group.length) count += 1;
-  if (filters.metric.length) count += 1;
   if (filters.search.trim()) count += 1;
   if (filters.id.length) count += 1;
   for (const key of NUMBER_KEYS) if (filters[key] !== undefined) count += 1;

@@ -57,8 +57,6 @@ afterAll(async () => {
 });
 
 const FILTER_FIELDS = [
-  'group',
-  'metric',
   'search',
   'id',
   'minSavingsMs',
@@ -103,8 +101,8 @@ function shellSplit(line: string): string[] {
 const CASES: Array<Partial<Filters>> = [
   {},
   { search: 'third party "cookies"' },
-  { group: ['opportunity', 'diagnostic'], maxScore: 0.9, sortBy: 'savingsMs' },
-  { metric: ['lcp'], party: 'first', noFlaky: true },
+  { maxScore: 0.9, sortBy: 'savingsMs' },
+  { party: 'first', noFlaky: true },
   { search: 'javascript', order: 'asc', limit: 3 },
   { minSavingsMs: 100, minSavingsBytes: 2048, hasItems: true },
   { hasItems: false, party: 'third', sortBy: 'savingsBytes' },
@@ -157,8 +155,6 @@ describe('filters in the page URL', () => {
     expect(filtersToParams(DEFAULT_FILTERS).toString()).toBe('');
     const filters: Filters = {
       ...DEFAULT_FILTERS,
-      group: ['passed'],
-      metric: ['tbt', 'cls'],
       search: 'third party',
       id: ['a', 'b'],
       minSavingsMs: 50,
@@ -173,14 +169,12 @@ describe('filters in the page URL', () => {
       noFlaky: true,
     };
     expect(filtersFromParams(filtersToParams(filters))).toEqual(filters);
-    expect(activeFilterCount(filters)).toBe(12);
+    expect(activeFilterCount(filters)).toBe(10);
     expect(activeFilterCount(DEFAULT_FILTERS)).toBe(0);
   });
 
   it('drops values the CLI would reject', () => {
-    const filters = filtersFromParams(new URLSearchParams('group=bogus,passed&metric=nope&party=all&sortBy=x&maxScore=abc'));
-    expect(filters.group).toEqual(['passed']);
-    expect(filters.metric).toEqual([]);
+    const filters = filtersFromParams(new URLSearchParams('party=all&sortBy=x&maxScore=abc'));
     expect(filters.party).toBe('any');
     expect(filters.sortBy).toBe('savingsMs');
     expect(filters.maxScore).toBeUndefined();

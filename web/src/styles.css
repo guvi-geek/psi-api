@@ -1193,33 +1193,6 @@ a.tab:hover {
   flex: 1;
 }
 
-.chip-group {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-}
-.chip {
-  height: 28px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-}
-.chip:hover {
-  color: var(--text);
-  border-color: var(--line-strong);
-}
-.chip[aria-pressed='true'] {
-  background: rgba(154, 168, 255, 0.14);
-  border-color: var(--accent);
-  color: var(--text);
-}
-
 .check-inline {
   align-items: center;
 }

@@ -11,26 +11,14 @@ import {
   filtersToCli,
   filtersToParams,
   findingRow,
-  GROUPS,
   insightFacts,
   insightRowsText,
   insightStats,
-  METRICS,
   parseDescription,
   type Filters,
-  type Group,
-  type Metric,
 } from './findings';
 import { CopyButton } from './copy-button';
-import { METRIC_SHORT } from './overview';
 import { href } from './router';
-
-const GROUP_LABELS: Record<Group, string> = {
-  opportunity: 'Opportunities',
-  diagnostic: 'Diagnostics',
-  passed: 'Passed',
-  informative: 'Informative',
-};
 
 const SORT_LABELS = {
   savingsMs: 'Saving in time',
@@ -149,10 +137,6 @@ function hasMoreFilters(filters: Filters): boolean {
   );
 }
 
-function toggle<T>(list: T[], value: T): T[] {
-  return list.includes(value) ? list.filter((entry) => entry !== value) : [...list, value];
-}
-
 function FilterBar(props: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
@@ -177,36 +161,6 @@ function FilterBar(props: {
           value={filters.search}
           onChange={(event) => update({ search: event.target.value })}
         />
-        <div className="chip-group" role="group" aria-label="Group">
-          {GROUPS.map((group) => (
-            <button
-              key={group}
-              type="button"
-              className="chip"
-              aria-pressed={filters.group.includes(group)}
-              onClick={() => update({ group: toggle(filters.group, group) })}
-            >
-              {GROUP_LABELS[group]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="filter-row">
-        <div className="chip-group" role="group" aria-label="Affects metric">
-          <span className="filter-label">Affects</span>
-          {METRICS.map((metric) => (
-            <button
-              key={metric}
-              type="button"
-              className="chip"
-              aria-pressed={filters.metric.includes(metric)}
-              onClick={() => update({ metric: toggle(filters.metric, metric as Metric) })}
-            >
-              {METRIC_SHORT[metric] ?? metric}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="filter-row">
