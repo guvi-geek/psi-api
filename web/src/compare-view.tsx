@@ -88,19 +88,27 @@ export function CompareView(props: { before?: string; after?: string; metric?: s
             ))}
           </select>
         </label>
+        {/* About the choice of reports, so it lives with the pickers, not above the result. */}
+        {warning && (
+          <p className="compare-note" role="note">
+            {warning}
+            {warning.startsWith('These reports') && ' The verdict still compares the numbers, but they are not like for like.'}
+          </p>
+        )}
       </div>
 
-      {listError && <p className="form-error">{listError.message}</p>}
-      {warning && <p className="note-warn compare-warning">{warning}</p>}
-      {!props.before || !props.after ? (
-        <p className="muted">Choose a before and an after report.</p>
-      ) : state.error ? (
-        <p className="form-error">{state.error.message}</p>
-      ) : !result ? (
-        <p className="muted">Comparing.</p>
-      ) : (
-        <CompareResult result={result} loading={Boolean(state.loading)} />
-      )}
+      <div className="compare-body">
+        {listError && <p className="form-error">{listError.message}</p>}
+        {!props.before || !props.after ? (
+          <p className="muted">Choose a before and an after report.</p>
+        ) : state.error ? (
+          <p className="form-error">{state.error.message}</p>
+        ) : !result ? (
+          <p className="muted">Comparing.</p>
+        ) : (
+          <CompareResult result={result} loading={Boolean(state.loading)} />
+        )}
+      </div>
     </section>
   );
 }

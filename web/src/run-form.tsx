@@ -74,96 +74,122 @@ export function RunForm() {
 
   return (
     <form className="run-form" onSubmit={onSubmit} noValidate aria-label="Measure a page">
-      <label className="visually-hidden" htmlFor={`${ids}-url`}>
-        Page address
-      </label>
-      <input
-        id={`${ids}-url`}
-        className="input run-url"
-        type="url"
-        inputMode="url"
-        placeholder="https://example.com/page"
-        autoComplete="url"
-        spellCheck={false}
-        value={url}
-        onChange={(event) => {
-          setUrl(event.target.value);
-          setUnreachable(null);
-        }}
-        aria-invalid={errorField === 'url'}
-        aria-describedby={errorField === 'url' ? `${ids}-error` : undefined}
-      />
-
-      <div className="segmented" role="radiogroup" aria-label="Device">
-        {(['mobile', 'desktop'] as const).map((value) => (
-          <label key={value} className={`segment${strategy === value ? ' is-on' : ''}`}>
-            <input
-              type="radio"
-              name={`${ids}-strategy`}
-              value={value}
-              checked={strategy === value}
-              onChange={() => setStrategy(value)}
-            />
-            {value === 'mobile' ? 'Mobile' : 'Desktop'}
-          </label>
-        ))}
-      </div>
-
-      <label className="runs-field">
+      {/* One command bar: every part of "measure this page" in a single field. */}
+      <div className={`command-bar${errorField ? ' has-error' : ''}`}>
+        <label className="visually-hidden" htmlFor={`${ids}-url`}>
+          Page address
+        </label>
         <input
-          className="input runs-input"
-          type="number"
-          min={1}
-          max={MAX_RUNS}
-          step={1}
-          value={runs}
-          onChange={(event) => setRuns(event.target.value)}
-          aria-label={`Runs, 1 to ${MAX_RUNS}`}
-          aria-invalid={errorField === 'runs'}
-          aria-describedby={errorField === 'runs' ? `${ids}-error` : undefined}
+          id={`${ids}-url`}
+          className="cb-url"
+          type="url"
+          inputMode="url"
+          placeholder="https://example.com/page"
+          autoComplete="url"
+          spellCheck={false}
+          value={url}
+          onChange={(event) => {
+            setUrl(event.target.value);
+            setUnreachable(null);
+          }}
+          aria-invalid={errorField === 'url'}
+          aria-describedby={errorField === 'url' ? `${ids}-error` : undefined}
         />
-        <span className="runs-unit">runs</span>
-      </label>
 
-      <div className="options" ref={optionsRef}>
-        <button
-          type="button"
-          className="button button-quiet"
-          aria-expanded={optionsOpen}
-          aria-controls={`${ids}-options`}
-          onClick={() => setOptionsOpen((open) => !open)}
-        >
-          Options{stat !== 'median' || !save ? ' (changed)' : ''}
-        </button>
-        {optionsOpen && (
-          <div className="options-panel" id={`${ids}-options`}>
-            <label className="field">
-              <span className="field-label">Headline number</span>
-              <select className="input" value={stat} onChange={(event) => setStat(event.target.value as Stat)}>
-                <option value="median">Median of the runs</option>
-                <option value="mean">Mean of the runs</option>
-                <option value="mode">Most common value</option>
-              </select>
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={save} onChange={(event) => setSave(event.target.checked)} />
-              <span>
-                Save the report
-                <span className="check-hint">Unsaved results are lost when the server restarts.</span>
-              </span>
-            </label>
+        <div className="cb-cell">
+          <div className="cb-toggle" role="radiogroup" aria-label="Device">
+            {(['mobile', 'desktop'] as const).map((value) => (
+              <label key={value} className={`cb-toggle-option${strategy === value ? ' is-on' : ''}`}>
+                <input
+                  type="radio"
+                  name={`${ids}-strategy`}
+                  value={value}
+                  checked={strategy === value}
+                  onChange={() => setStrategy(value)}
+                />
+                {value === 'mobile' ? 'Mobile' : 'Desktop'}
+              </label>
+            ))}
           </div>
-        )}
-      </div>
+        </div>
 
-      <button
-        type="submit"
-        className="button button-primary"
-        disabled={busy}
-        title={runCount ? `Uses ${runCount} PSI call${runCount === 1 ? '' : 's'} from your quota` : undefined}
-      >
-        {busy ? 'Starting' : 'Measure'}
-      </button>
+        <label className="cb-cell cb-runs" title={`How many PSI runs to aggregate, 1 to ${MAX_RUNS}. Each run is one PSI call.`}>
+          <input
+            className="cb-number"
+            type="number"
+            min={1}
+            max={MAX_RUNS}
+            step={1}
+            value={runs}
+            onChange={(event) => setRuns(event.target.value)}
+            aria-label={`Runs, 1 to ${MAX_RUNS}`}
+            aria-invalid={errorField === 'runs'}
+            aria-describedby={errorField === 'runs' ? `${ids}-error` : undefined}
+          />
+          <span className="cb-unit" aria-hidden="true">
+            runs
+          </span>
+        </label>
+
+        {/* Wide screens: both options sit in the bar. Narrow ones: under Options. */}
+        <div className="cb-cell cb-wide">
+          <select
+            className="cb-select"
+            value={stat}
+            onChange={(event) => setStat(event.target.value as Stat)}
+            aria-label="Headline number"
+            title="Headline number: the statistic of the runs the report leads with"
+          >
+            <option value="median">Median</option>
+            <option value="mean">Mean</option>
+            <option value="mode">Most common</option>
+          </select>
+        </div>
+        <label className="cb-cell cb-wide cb-save" title="Unsaved results are lost when the server restarts.">
+          <input type="checkbox" checked={save} onChange={(event) => setSave(event.target.checked)} />
+          <span>Save</span>
+        </label>
+
+        <div className="cb-cell cb-narrow options" ref={optionsRef}>
+          <button
+            type="button"
+            className="cb-options"
+            aria-expanded={optionsOpen}
+            aria-controls={`${ids}-options`}
+            onClick={() => setOptionsOpen((open) => !open)}
+          >
+            Options{stat !== 'median' || !save ? ' •' : ''}
+          </button>
+          {optionsOpen && (
+            <div className="options-panel" id={`${ids}-options`}>
+              <label className="field">
+                <span className="field-label">Headline number</span>
+                <select className="input" value={stat} onChange={(event) => setStat(event.target.value as Stat)}>
+                  <option value="median">Median of the runs</option>
+                  <option value="mean">Mean of the runs</option>
+                  <option value="mode">Most common value</option>
+                </select>
+              </label>
+              <label className="check">
+                <input type="checkbox" checked={save} onChange={(event) => setSave(event.target.checked)} />
+                <span>
+                  Save the report
+                  <span className="check-hint">Unsaved results are lost when the server restarts.</span>
+                </span>
+              </label>
+            </div>
+          )}
+        </div>
+
+        <button
+          type="submit"
+          className="cb-submit"
+          disabled={busy}
+          title={runCount ? `Uses ${runCount} PSI call${runCount === 1 ? '' : 's'} from your quota` : undefined}
+        >
+          {busy ? 'Starting' : 'Measure'}
+        </button>
+      </div>
 
       {error && (
         <p className="form-error" id={`${ids}-error`} role="alert">

@@ -13,6 +13,7 @@ import { compareReports } from '../src/compare.js';
 import type { ReanalyzeDelta } from '../src/reanalyze.js';
 import {
   changeText,
+  rerunRequest,
   idsToSave,
   compareCli,
   compareQuery,
@@ -176,7 +177,34 @@ describe('picking reports', () => {
   });
 });
 
-describe('re-analyze', () => {
+describe('re-analyze on a report', () => {
+  it('measures the same page again with the settings of the report, saved', () => {
+    expect(
+      rerunRequest({ url: 'https://site.test/a', strategy: 'desktop', runsRequested: 15, stat: 'mean' }),
+    ).toEqual({ url: 'https://site.test/a', strategy: 'desktop', runs: 15, stat: 'mean', save: true });
+  });
+
+  it('starts a real job on the server with those settings', async () => {
+    const report = (await loadReport(BEFORE, dir))!;
+    const request = rerunRequest(report);
+    expect(request).toMatchObject({ url: report.url, strategy: report.strategy, runs: report.runsRequested });
+    // Validated by the same route the run form uses; async=true returns a job id.
+    // fetch is never reached here: the job starts and this test does not wait on it.
+    const fake = buildServer({ fetchImpl: (async () => new Response('{}', { status: 500 })) as typeof fetch, sleepImpl: async () => {} });
+    await fake.ready();
+    try {
+      const started = await fake.inject({ method: 'POST', url: '/report', payload: { ...request, async: true } });
+      expect(started.statusCode).toBe(202);
+      const job = (await fake.inject({ method: 'GET', url: `/jobs/${started.json().jobId}` })).json();
+      expect(job.request).toEqual({ url: report.url, strategy: report.strategy, runs: report.runsRequested, stat: report.stat });
+      expect(job.save).toBe(true);
+    } finally {
+      await fake.close();
+    }
+  });
+});
+
+describe('rebuild from saved runs', () => {
   const delta: ReanalyzeDelta = {
     reportId: 'r',
     recovered: [

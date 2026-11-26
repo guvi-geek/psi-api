@@ -67,7 +67,7 @@ function Home({ onChanged }: { onChanged: () => void }) {
         </div>
       )}
       <div className="panel home-reanalyze">
-        <h2 className="panel-title">Re-analyze saved reports</h2>
+        <h2 className="panel-title">Rebuild saved reports</h2>
         <ReanalyzeBox onSaved={onChanged} />
       </div>
     </section>
@@ -109,7 +109,7 @@ function Shell({ route }: { route?: Route }) {
         {route?.name === 'home' && <Home onChanged={refreshReports} />}
         {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
         {route?.name === 'report' && (
-          <ReportView key={route.reportId} reportId={route.reportId} params={route.params} onChanged={refreshReports} />
+          <ReportView key={route.reportId} reportId={route.reportId} params={route.params} />
         )}
         {route?.name === 'compare' && (
           <CompareView before={route.before} after={route.after} metric={route.metric} version={reportsVersion} />

@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import type { MeasurementValidity } from '../../src/validity';
 import { environmentLine, lighthouseLabel } from '../../src/render';
-import { api, ApiError } from './api';
+import { api, ApiError, startRun } from './api';
 import {
   cliCommand,
   fieldRows,
@@ -16,9 +16,8 @@ import {
   type MetricRow,
   type SpreadItem,
 } from './overview';
-import { previousOf } from './compare';
+import { previousOf, rerunRequest } from './compare';
 import { CopyButton } from './copy-button';
-import { ReanalyzeBox } from './reanalyze-box';
 import { useApi } from './use-api';
 import type { ReportRow } from './run';
 import { FindingsView } from './findings-view';
@@ -35,20 +34,13 @@ interface Loaded {
 }
 
 /** A saved report. Reading it costs no quota. */
-export function ReportView(props: { reportId: string; params: URLSearchParams; onChanged: () => void }) {
-  const { reportId, params, onChanged } = props;
-  // Bumped after a re-analysis is saved, so the page reloads the rewritten report.
-  const [version, setVersion] = useState(0);
+export function ReportView(props: { reportId: string; params: URLSearchParams }) {
+  const { reportId, params } = props;
   const [state, setState] = useState<{ data?: Loaded; error?: ApiError }>({});
-
-  // A new report starts blank; a reload of the same one (after a re-analysis is
-  // saved) keeps the page, and its open Re-analyze panel, on screen meanwhile.
-  useEffect(() => {
-    setState({});
-  }, [reportId]);
 
   useEffect(() => {
     let live = true;
+    setState({});
     const id = encodeURIComponent(reportId);
     Promise.all([
       api<AggregatedReport>(`/report/${id}`),
@@ -59,7 +51,7 @@ export function ReportView(props: { reportId: string; params: URLSearchParams; o
     return () => {
       live = false;
     };
-  }, [reportId, version]);
+  }, [reportId]);
 
   if (state.error) {
     return (
@@ -92,13 +84,7 @@ export function ReportView(props: { reportId: string; params: URLSearchParams; o
   const tab = tabs.find((entry) => entry.id === params.get('tab'))?.id ?? 'overview';
   return (
     <section className="page page-wide">
-      <ReportHeader
-        report={report}
-        onSaved={() => {
-          setVersion((value) => value + 1);
-          onChanged();
-        }}
-      />
+      <ReportHeader report={report} />
       <nav className="tabs" aria-label="Report views">
         {tabs.map((entry) => (
           <a
@@ -111,31 +97,36 @@ export function ReportView(props: { reportId: string; params: URLSearchParams; o
           </a>
         ))}
       </nav>
-      {/* Remounted after a re-analysis so every tab reads the rewritten report.
-          Filters update the URL in place, so a remount reads them from there. */}
-      <Fragment key={version}>
-        {(() => {
-          const tabParams = version === 0 ? params : new URLSearchParams(location.hash.split('?')[1] ?? '');
-          return (
-            <>
-              {tab === 'overview' && <Overview report={report} validity={validity} />}
-              {tab === 'findings' && <FindingsView report={report} params={tabParams} />}
-              {tab === 'queue' && <WorkQueueView report={report} params={tabParams} />}
-              {tab === 'requests' && <RequestsView report={report} params={tabParams} />}
-              {tab === 'json' && <JsonView report={report} />}
-            </>
-          );
-        })()}
-      </Fragment>
+      {tab === 'overview' && <Overview report={report} validity={validity} />}
+      {tab === 'findings' && <FindingsView report={report} params={params} />}
+      {tab === 'queue' && <WorkQueueView report={report} params={params} />}
+      {tab === 'requests' && <RequestsView report={report} params={params} />}
+      {tab === 'json' && <JsonView report={report} />}
     </section>
   );
 }
 
-function ReportHeader({ report, onSaved }: { report: AggregatedReport; onSaved: () => void }) {
+function ReportHeader({ report }: { report: AggregatedReport }) {
   const measured = measuredAt(report.reportId, report.generatedAt);
   const { data } = useApi<{ reports: ReportRow[] }>('/reports');
   const previous = previousOf(data?.reports ?? [], report.reportId);
-  const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const request = rerunRequest(report);
+
+  // Measures the page again with this report's own settings, as a new saved report.
+  async function reanalyze() {
+    setError(null);
+    setStarting(true);
+    try {
+      const { jobId } = await startRun(request);
+      location.hash = href.run(jobId);
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : String(caught));
+      setStarting(false);
+    }
+  }
+
   return (
     <header className="report-header-wrap">
       <div className="report-header">
@@ -160,18 +151,19 @@ function ReportHeader({ report, onSaved }: { report: AggregatedReport; onSaved: 
           <button
             type="button"
             className="button button-quiet"
-            aria-expanded={reanalyzeOpen}
-            onClick={() => setReanalyzeOpen((open) => !open)}
+            onClick={reanalyze}
+            disabled={starting}
+            title={`Measure this page again: ${request.strategy}, ${request.runs} runs, ${request.stat}. Uses ${request.runs} PSI call${request.runs === 1 ? '' : 's'} from your quota and saves a new report.`}
           >
-            Re-analyze
+            {starting ? 'Starting' : 'Re-analyze'}
           </button>
           <CopyButton text={cliCommand(report.reportId)} label="Copy CLI command" />
         </div>
       </div>
-      {reanalyzeOpen && (
-        <div className="panel reanalyze-panel">
-          <ReanalyzeBox reportId={report.reportId} onSaved={onSaved} />
-        </div>
+      {error && (
+        <p className="form-error report-error" role="alert">
+          {error}
+        </p>
       )}
     </header>
   );

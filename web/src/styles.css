@@ -106,13 +106,16 @@ a:hover {
   z-index: 10;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   padding: 0 20px;
   background: var(--bg);
   border-bottom: 1px solid var(--line);
 }
 
+/* Sidebar width minus the bar's padding, plus the workspace padding: the bar lines up with the content. */
 .brand {
+  flex: 0 0 auto;
+  width: calc(var(--sidebar) + 4px);
   font-weight: 600;
   font-size: 16px;
   color: var(--text);
@@ -128,6 +131,11 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+/* In the bar the API key status is a quiet dot and a word, not a pill. */
+.topbar .badge {
+  padding: 0;
+  border: 0;
 }
 
 .sidebar {
@@ -319,18 +327,195 @@ a:hover {
 .run-form {
   position: relative;
   flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
-  max-width: 980px;
+  max-width: 960px;
 }
 
-.run-url {
+/* One field holding every part of "measure this page", split by hairlines. */
+.command-bar {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: border-color 120ms;
+}
+.command-bar:hover {
+  border-color: var(--line-strong);
+}
+.command-bar:focus-within {
+  border-color: var(--accent);
+}
+.command-bar.has-error {
+  border-color: var(--bad);
+}
+
+.cb-url {
   flex: 1;
-  min-width: 160px;
-  font-family: var(--mono);
+  min-width: 140px;
+  padding: 0 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px 0 0 8px;
+  color: var(--text);
+  font: 13px var(--mono);
+}
+.cb-url::placeholder {
+  color: #5f6876;
+}
+.cb-url:focus-visible,
+.cb-number:focus-visible,
+.cb-select:focus-visible {
+  outline: none;
+}
+.cb-url[aria-invalid='true'] {
+  color: var(--bad);
+}
+
+.cb-cell {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-left: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.cb-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--bg);
+  border-radius: 6px;
+}
+.cb-toggle-option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 4px;
   font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cb-toggle-option input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.cb-toggle-option:hover {
+  color: var(--text);
+}
+.cb-toggle-option.is-on {
+  background: var(--panel-raised);
+  color: var(--text);
+}
+.cb-toggle-option:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+}
+
+.cb-runs {
+  cursor: text;
+}
+.cb-number {
+  width: 26px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: right;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.cb-number::-webkit-inner-spin-button,
+.cb-number::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cb-number[aria-invalid='true'] {
+  color: var(--bad);
+}
+.cb-unit {
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.cb-select {
+  padding: 0 2px;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.cb-select option {
+  background: var(--panel);
+}
+
+.cb-save {
+  gap: 7px;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.cb-save:hover {
+  color: var(--text);
+}
+.cb-save input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.cb-options {
+  padding: 0 2px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cb-options:hover,
+.cb-options[aria-expanded='true'] {
+  color: var(--text);
+}
+
+.cb-submit {
+  margin: 3px;
+  padding: 0 18px;
+  background: var(--accent);
+  border: 0;
+  border-radius: 6px;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cb-submit:hover {
+  background: var(--accent-hover);
+}
+.cb-submit:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+/* Headline number and Save sit in the bar when it is wide; otherwise they are under Options. */
+.cb-wide {
+  display: none;
+}
+@media (min-width: 1200px) {
+  .cb-wide {
+    display: flex;
+  }
+  .cb-narrow {
+    display: none;
+  }
 }
 
 .segmented {
@@ -362,18 +547,6 @@ a:hover {
 }
 .segment:has(input:focus-visible) {
   outline: 2px solid var(--accent);
-}
-
-.runs-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 14px;
-  color: var(--muted);
-}
-.runs-input {
-  width: 66px;
-  text-align: right;
 }
 
 .options {
@@ -1486,8 +1659,8 @@ a.tab:hover {
   gap: 8px;
   flex-shrink: 0;
 }
-.reanalyze-panel {
-  margin-top: 16px;
+.report-error {
+  margin-top: 12px;
 }
 
 .reanalyze {
@@ -1557,8 +1730,31 @@ a.tab:hover {
   font-size: 18px;
   padding: 0 10px;
 }
-.compare-warning {
-  margin: 0;
+/* A footer row of the pickers panel: separated by a hairline, marked in amber. */
+.compare-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 4px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--text);
+}
+.compare-note::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  transform: translateY(-1px);
+}
+
+/* The result sits clear of the pickers. */
+.compare-body {
+  margin-top: 20px;
 }
 
 .verdict-panel {
@@ -1603,9 +1799,6 @@ a.tab:hover {
 /* ---------- narrower screens ---------- */
 
 @media (max-width: 1100px) {
-  .runs-unit {
-    display: none;
-  }
   .summary,
   .details-grid {
     grid-template-columns: 1fr;
@@ -1620,13 +1813,41 @@ a.tab:hover {
     gap: 12px;
     padding: 12px 16px;
   }
+  .brand {
+    width: auto;
+  }
   .run-form {
     order: 3;
     flex-basis: 100%;
-    flex-wrap: wrap;
+    max-width: none;
   }
-  .run-url {
+  .command-bar {
+    flex-wrap: wrap;
+    height: auto;
+  }
+  .cb-url {
     flex-basis: 100%;
+    height: 40px;
+    border-bottom: 1px solid var(--line);
+    border-radius: 8px 8px 0 0;
+  }
+  .cb-url + .cb-cell {
+    border-left: 0;
+  }
+  .cb-cell {
+    height: 40px;
+  }
+  /* A full-width action along the bottom of the bar, not a squeezed third row. */
+  .cb-submit {
+    flex: 1 1 100%;
+    height: 36px;
+  }
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tab {
+    white-space: nowrap;
   }
   .shell {
     grid-template-columns: 1fr;
