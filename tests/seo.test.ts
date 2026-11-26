@@ -8,17 +8,15 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   cellText,
   isSeoId,
-  listSeoChecks,
-  loadSeoCheck,
   makeSeoId,
   normalizeSeo,
   runSeoCheck,
-  saveSeoCheck,
   seoSections,
   toCell,
   toTable,
   type SeoCheck,
 } from '../src/seo.js';
+import { listSeoChecks, loadSeoCheck, saveSeoCheck } from '../src/seo-storage.js';
 import { listReports } from '../src/storage.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
