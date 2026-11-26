@@ -102,7 +102,7 @@ function Shell({ route }: { route?: Route }) {
       <main className="workspace" id="main">
         {route?.name === 'home' && <Home />}
         {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
-        {route?.name === 'report' && <ReportView reportId={route.reportId} />}
+        {route?.name === 'report' && <ReportView reportId={route.reportId} params={route.params} />}
         {route?.name === 'compare' && <Placeholder title="Compare reports">The compare view is built in a later step.</Placeholder>}
         {route?.name === 'missing' && (
           <Placeholder title="Page not found">

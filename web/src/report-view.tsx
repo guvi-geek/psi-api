@@ -16,6 +16,8 @@ import {
   type MetricRow,
   type SpreadItem,
 } from './overview';
+import { FindingsView } from './findings-view';
+import { href } from './router';
 import { formatWhen } from './run';
 
 interface Loaded {
@@ -25,7 +27,7 @@ interface Loaded {
 }
 
 /** A saved report. Reading it costs no quota. */
-export function ReportView({ reportId }: { reportId: string }) {
+export function ReportView({ reportId, params }: { reportId: string; params: URLSearchParams }) {
   const [state, setState] = useState<{ data?: Loaded; error?: ApiError }>({});
 
   useEffect(() => {
@@ -64,15 +66,28 @@ export function ReportView({ reportId }: { reportId: string }) {
   }
 
   const { report, validity } = state.data;
+  const tab = params.get('tab') === 'findings' ? 'findings' : 'overview';
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'findings', label: `Findings ${report.insights.length}` },
+  ] as const;
   return (
     <section className="page page-wide">
       <ReportHeader report={report} />
-      <div className="tabs" role="tablist" aria-label="Report views">
-        <button type="button" role="tab" aria-selected="true" className="tab is-on">
-          Overview
-        </button>
-      </div>
-      <Overview report={report} validity={validity} />
+      <nav className="tabs" aria-label="Report views">
+        {tabs.map((entry) => (
+          <a
+            key={entry.id}
+            className={`tab${tab === entry.id ? ' is-on' : ''}`}
+            aria-current={tab === entry.id ? 'page' : undefined}
+            href={href.report(report.reportId, entry.id === 'overview' ? undefined : new URLSearchParams({ tab: entry.id }))}
+          >
+            {entry.label}
+          </a>
+        ))}
+      </nav>
+      {tab === 'overview' && <Overview report={report} validity={validity} />}
+      {tab === 'findings' && <FindingsView report={report} params={params} />}
     </section>
   );
 }
