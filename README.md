@@ -340,7 +340,7 @@ Reading it is free and read-only. Do not edit it: `--reanalyze` rebuilds from it
 
 ### Finding a stored report
 
-Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. There is no CLI flag or endpoint that lists reports — the directories are the index:
+Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `npm run psi -- --list` lists every stored report, newest first, at no quota cost (add `--json` for a machine-readable list), and the server's `GET /reports` returns the same list. The directories are a plain index too:
 
 ```bash
 ls -1t data/<host>/                                    # newest first
