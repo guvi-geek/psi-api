@@ -19,7 +19,6 @@ import {
 import { rerunRequest } from './reanalyze';
 import { CopyButton } from './copy-button';
 import { FindingsView } from './findings-view';
-import { JsonView } from './json-view';
 import { RequestsView } from './requests-view';
 import { href } from './router';
 import { formatWhen, measuredAt } from './run';
@@ -75,7 +74,6 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
     { id: 'overview', label: 'Overview' },
     { id: 'findings', label: `Findings ${report.insights.length}` },
     { id: 'requests', label: `Requests ${report.requests?.length ?? 0}` },
-    { id: 'json', label: 'JSON' },
   ] as const;
   const tab = tabs.find((entry) => entry.id === params.get('tab'))?.id ?? 'overview';
   return (
@@ -96,7 +94,6 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
       {tab === 'overview' && <Overview report={report} validity={validity} />}
       {tab === 'findings' && <FindingsView report={report} params={params} />}
       {tab === 'requests' && <RequestsView report={report} params={params} />}
-      {tab === 'json' && <JsonView report={report} />}
     </section>
   );
 }

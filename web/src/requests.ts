@@ -1,5 +1,5 @@
 /**
- * The Requests (--requests) and JSON tabs, worked out from the stored report
+ * The Requests (--requests) tab, worked out from the stored report
  * with the CLI's own helpers. No React here: tests import it.
  */
 import type { NetworkRequest } from '../../src/types';
@@ -109,11 +109,4 @@ export function requestTotals(requests: NetworkRequest[]): RequestTotals {
     notFound: requests.filter((request) => request.statusCode === 404).length,
     byType: summary.byType.map((entry) => ({ type: entry.type, count: entry.count, bytes: formatBytes(entry.bytes) })),
   };
-}
-
-/* ---------------------------------- json ---------------------------------- */
-
-/** Top-level keys of the stored report with their size, for the JSON tab's section picker. */
-export function jsonSections(report: object): Array<{ key: string; bytes: number }> {
-  return Object.entries(report).map(([key, value]) => ({ key, bytes: JSON.stringify(value)?.length ?? 0 }));
 }

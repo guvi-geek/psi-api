@@ -1,16 +1,13 @@
 /**
- * The Requests and JSON tabs. Parity check: the request rows come out in the
+ * The Requests tab. Parity check: the request rows come out in the
  * order the CLI's --requests table prints.
  */
 import { describe, expect, it } from 'vitest';
-import { aggregateReports } from '../src/aggregate.js';
-import { applyTargets } from '../src/targets.js';
 import { parseArgs } from '../src/cli.js';
 import { renderRequests } from '../src/rows.js';
 import type { NetworkRequest } from '../src/types.js';
 import {
   DEFAULT_REQUESTS,
-  jsonSections,
   requestRows,
   requestsFromParams,
   requestsToCli,
@@ -18,18 +15,6 @@ import {
   requestTotals,
   type RequestFilters,
 } from '../web/src/requests.js';
-import { normalizeLh13 } from './helpers.js';
-
-const report = applyTargets(
-  aggregateReports(
-    [0, 1, 2].map((i) =>
-      normalizeLh13((raw) => {
-        (raw as { lighthouseResult: { fetchTime: string } }).lighthouseResult.fetchTime = `2026-01-01T00:00:0${i}.000Z`;
-      }),
-    ),
-    { reportId: '2026-11-26T02-00-00Z-mobile', runsRequested: 3 },
-  ),
-);
 
 const REQUESTS: NetworkRequest[] = [
   { url: 'https://site.test/', resourceType: 'Document', priority: 'VeryHigh', startMs: 0, endMs: 120, transferSize: 18_000, statusCode: 200, party: 'first' },
@@ -90,13 +75,5 @@ describe('requests', () => {
     expect(requestsToCli('id', DEFAULT_REQUESTS)).toBe('npm run psi -- --reportId id --requests');
     const parsed = parseArgs(requestsToCli('id', filters).replace(/^npm run psi -- /, '').split(' '))!;
     expect(parsed).toMatchObject({ requests: 'size', party: 'third', limit: 20 });
-  });
-});
-
-describe('json sections', () => {
-  it('lists every top-level key with its size', () => {
-    const sections = jsonSections(report);
-    expect(sections.map((section) => section.key)).toEqual(Object.keys(report));
-    expect(sections.every((section) => section.bytes > 0)).toBe(true);
   });
 });
