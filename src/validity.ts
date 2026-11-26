@@ -15,9 +15,6 @@ export interface MeasurementValidity {
   reasons: string[];
 }
 
-/** Slowest CPU index at least this many times the fastest, and the runs are not one population. */
-const BENCHMARK_SPREAD = 2;
-
 const CACHED_RUN = /same analysis timestamp/i;
 
 export function isPageNotFound(run: {
@@ -73,18 +70,9 @@ export function assessMeasurement(input: {
     );
   }
 
-  const indexes = runs
-    .map((run) => run.environment?.benchmarkIndex)
-    .filter((index): index is number => typeof index === 'number' && index > 0);
-  if (indexes.length >= 2) {
-    const min = Math.min(...indexes);
-    const max = Math.max(...indexes);
-    if (max / min >= BENCHMARK_SPREAD) {
-      reasons.push(
-        `CPU benchmark index ranges from ${Math.round(min)} to ${Math.round(max)}. These runs were not scored against one device, so the spread is not page noise.`,
-      );
-    }
-  }
+  // A spread in the runs' CPU benchmark index is not a reason to discard a report:
+  // PSI picks the machine per run and the caller cannot choose it, so nearly every
+  // report would be rejected. Each run's benchmarkIndex stays in runs.json.
 
   return { usable: reasons.length === 0, reasons };
 }

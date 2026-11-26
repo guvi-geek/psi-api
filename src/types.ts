@@ -510,6 +510,19 @@ export interface Job {
   request: ReportRequest;
   result?: AggregatedReport;
   error?: { code: string; message: string };
+  /** One entry per finished PSI attempt, in finish order. Lets a client draw live progress. */
+  progress?: JobProgress[];
+  /** False when the report is not written to data/, so there is no stored report to open. */
+  save?: boolean;
+}
+
+export interface JobProgress {
+  run: number;
+  ok: boolean;
+  score?: number;
+  error?: string;
+  /** True when PSI repeated an analysis already accepted; the slot is retried. */
+  cached?: boolean;
 }
 
 export interface ReportRequest {

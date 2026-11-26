@@ -5,16 +5,29 @@ import Fastify, {
   type FastifyReply,
   type FastifyRequest,
 } from 'fastify';
-import { pathToFileURL } from 'node:url';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
-import type { AggregatedReport, FilterGroup, Job, MetricKey, SortField, SortOrder } from './types.js';
+import type {
+  AggregatedReport,
+  FilterGroup,
+  Job,
+  JobProgress,
+  MetricKey,
+  SortField,
+  SortOrder,
+} from './types.js';
 import { METRIC_KEYS, STATS, STRATEGIES } from './types.js';
 import { filterInsights } from './insights.js';
 import { diagnose } from './diagnose.js';
 import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
 import { UrlValidationError } from './psiClient.js';
-import { loadReport, loadRuns } from './storage.js';
+import { getDataDir, listReports, loadReport, loadRuns, saveReport } from './storage.js';
+import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
+import { loadTargets } from './targets.js';
 import { assessMeasurement } from './validity.js';
 
 loadEnv();
@@ -67,6 +80,8 @@ const reportParams = z.object({
   stat: z.enum(STATS).default('median'),
   force: boolish.default(false),
   async: boolish.default(false),
+  /** false = do not write the report to data/ (the CLI's --no-save). */
+  save: boolish.default(true),
 });
 
 const filterParams = z.object({
@@ -102,7 +117,7 @@ const jobsByRequest = new Map<string, Job>();
 let jobCounter = 0;
 
 function cacheKey(params: ReportParams): string {
-  return [params.url, params.strategy, params.runs, params.stat].join('|');
+  return [params.url, params.strategy, params.runs, params.stat, params.save ? 'save' : 'nosave'].join('|');
 }
 
 function readCache(key: string): AggregatedReport | undefined {
@@ -151,28 +166,93 @@ function compact(query: unknown): Record<string, unknown> {
   return out;
 }
 
+/** Test seam: lets a test drive real runs through a fake PSI. Production passes nothing. */
+export interface ServerOptions {
+  fetchImpl?: typeof fetch;
+  sleepImpl?: (ms: number) => Promise<void>;
+  /** Built web UI to serve at `/`. Defaults to web/out (the Next.js export); skipped when it has not been built. */
+  webDir?: string;
+}
+
+/** web/out, from either src/server.ts or dist/server.js: both sit one level under the repo root. */
+const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'out');
+
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json',
+};
+
+/**
+ * Serves the built UI: `/` is index.html, `/_next/*` is the Next.js export's
+ * files (hashed under /_next/static, so cached for good). The UI routes with
+ * the URL hash, so no API path is ever shadowed.
+ */
+function registerWebUi(app: FastifyInstance, webDir: string): void {
+  const indexFile = path.join(webDir, 'index.html');
+  if (!existsSync(indexFile)) return;
+  const assetsDir = path.join(webDir, '_next');
+
+  app.get('/', async (_req, reply) =>
+    reply
+      .header('cache-control', 'no-cache')
+      .type(MIME['.html']!)
+      .send(await readFile(indexFile)),
+  );
+
+  app.get<{ Params: { '*': string } }>('/_next/*', async (req, reply) => {
+    const file = path.resolve(assetsDir, req.params['*']);
+    const type = MIME[path.extname(file).toLowerCase()];
+    if (!file.startsWith(assetsDir + path.sep) || !type) {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'no such asset' } });
+    }
+    try {
+      const body = await readFile(file);
+      const hashed = file.startsWith(path.join(assetsDir, 'static') + path.sep);
+      return reply
+        .header('cache-control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache')
+        .type(type)
+        .send(body);
+    } catch {
+      return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'no such asset' } });
+    }
+  });
+}
+
 async function produceReport(
   params: ReportParams,
   log: FastifyBaseLogger,
+  serverOptions: ServerOptions,
+  onProgress?: (entry: JobProgress) => void,
 ): Promise<AggregatedReport> {
   const result = await runReport({
     url: params.url,
     strategy: params.strategy,
     runs: params.runs,
     stat: params.stat,
+    save: params.save,
+    fetchImpl: serverOptions.fetchImpl,
+    sleepImpl: serverOptions.sleepImpl,
     onRetry: ({ reason, attempt, maxAttempts, delayMs }) => {
       log.warn({ reason, attempt, maxAttempts, delayMs }, 'psi retry');
     },
-    onRunFinished: ({ run, ok, score, error }) => {
+    onRunFinished: ({ run, ok, score, error, cached }) => {
       if (ok) log.info({ run, score }, 'psi run complete');
       else log.warn({ run, error }, 'psi run failed');
+      onProgress?.({ run, ok, score, error, cached });
     },
   });
   for (const warning of result.warnings) log.warn(warning);
   return result.report;
 }
 
-function startJob(params: ReportParams, log: FastifyBaseLogger): Job {
+function startJob(params: ReportParams, log: FastifyBaseLogger, serverOptions: ServerOptions): Job {
   jobCounter += 1;
   const id = `job_${Date.now().toString(36)}_${jobCounter}`;
   const job: Job = {
@@ -180,6 +260,8 @@ function startJob(params: ReportParams, log: FastifyBaseLogger): Job {
     status: 'queued',
     createdAt: new Date().toISOString(),
     request: { url: params.url, strategy: params.strategy, runs: params.runs, stat: params.stat },
+    progress: [],
+    save: params.save,
   };
   jobs.set(id, job);
   jobsByRequest.set(cacheKey(params), job);
@@ -189,7 +271,7 @@ function startJob(params: ReportParams, log: FastifyBaseLogger): Job {
     job.status = 'running';
     job.startedAt = new Date().toISOString();
     try {
-      const report = await produceReport(params, log);
+      const report = await produceReport(params, log, serverOptions, (entry) => job.progress?.push(entry));
       job.status = 'done';
       job.result = report;
       writeCache(key, report);
@@ -268,7 +350,61 @@ const insightsBody = z.object({
     .optional(),
 });
 
-export function buildServer(): FastifyInstance {
+const reanalyzeBody = z.object({
+  /** Omit to rebuild every stored report, like the CLI's bare --reanalyze. */
+  reportId: z.string().min(1).optional(),
+  save: boolish.default(true),
+});
+
+interface ReanalyzeRow {
+  reportId: string;
+  delta: ReanalyzeDelta | null;
+  error?: string;
+  saved: boolean;
+}
+
+/** Same rebuild the CLI's --reanalyze runs: stored runs in, report out, runs.json untouched. */
+async function reanalyzeStored(reportIds: string[], save: boolean): Promise<ReanalyzeRow[]> {
+  const targets = loadTargets();
+  const rows: ReanalyzeRow[] = [];
+  for (const reportId of reportIds) {
+    try {
+      const before = await loadReport(reportId);
+      const runs = await loadRuns(reportId);
+      if (!runs) {
+        rows.push({ reportId, delta: null, error: 'no stored runs', saved: false });
+        continue;
+      }
+      if (!before) {
+        rows.push({ reportId, delta: null, error: 'no stored report', saved: false });
+        continue;
+      }
+      const after = reanalyze(runs, {
+        reportId,
+        stat: before.stat,
+        runsRequested: before.runsRequested,
+        targets,
+      });
+      const delta = diffReanalyzed(before, after);
+      if (save) await saveReport(after, runs, getDataDir());
+      rows.push({ reportId, delta, saved: save });
+    } catch (error) {
+      rows.push({
+        reportId,
+        delta: null,
+        error: error instanceof Error ? error.message : String(error),
+        saved: false,
+      });
+    }
+  }
+  return rows;
+}
+
+const notFound = (reportId: string) => ({
+  error: { code: 'NOT_FOUND', message: `no stored report "${reportId}"` },
+});
+
+export function buildServer(options: ServerOptions = {}): FastifyInstance {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   app.setErrorHandler((error, _req, reply) => {
@@ -301,11 +437,11 @@ export function buildServer(): FastifyInstance {
     }
 
     if (params.async) {
-      const job = startJob(params, req.log);
+      const job = startJob(params, req.log, options);
       return reply.status(202).send({ jobId: job.id, status: job.status });
     }
 
-    const report = await produceReport(params, req.log);
+    const report = await produceReport(params, req.log, options);
     writeCache(key, report);
     return reply.send(report);
   };
@@ -375,16 +511,68 @@ export function buildServer(): FastifyInstance {
       stat: body.stat,
       force: body.force,
       async: false,
+      save: true,
     };
     const key = cacheKey(params);
 
     let report = body.force ? undefined : readCache(key);
     if (!report) {
-      report = await produceReport(params, req.log);
+      report = await produceReport(params, req.log, options);
       writeCache(key, report);
     }
     return reply.send(insightsPayload(report, filterParams.parse(body.filters ?? {})));
   });
+
+  // The CLI's --list, with the fields a report picker needs. Free: reads data/ only.
+  app.get('/reports', async () => {
+    const reports = [];
+    for (const ref of await listReports()) {
+      const report = await loadReport(ref.reportId);
+      if (!report) continue;
+      const gaps = report.targets?.gaps ?? [];
+      reports.push({
+        reportId: report.reportId,
+        host: ref.host,
+        url: report.url,
+        strategy: report.strategy,
+        stat: report.stat,
+        generatedAt: report.generatedAt,
+        runsRequested: report.runsRequested,
+        runsSucceeded: report.runsSucceeded,
+        score: report.headline.score,
+        lcp: report.headline.metrics.lcp ?? null,
+        meetsTarget: report.targets?.meetsTarget ?? null,
+        targetsFailing: gaps.filter((gap) => !gap.meets).length,
+        targetsTotal: gaps.length,
+      });
+    }
+    return { reports };
+  });
+
+  // The CLI's --reanalyze. Free: rebuilds from runs.json, never calls PSI.
+  app.post('/reanalyze', async (req, reply) => {
+    // It rewrites files, so it takes only a JSON body. A JSON request needs a CORS
+    // preflight, which this server never grants, so another site open in the
+    // browser cannot send one. A body-less or text/plain POST can, so it is refused.
+    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
+      return reply.status(415).send({
+        error: { code: 'UNSUPPORTED_MEDIA_TYPE', message: 'send a JSON body, e.g. {"save": false}' },
+      });
+    }
+    const body = reanalyzeBody.parse((req.body ?? {}) as object);
+    if (body.reportId && !(await loadReport(body.reportId))) {
+      return reply.status(404).send(notFound(body.reportId));
+    }
+    const ids = body.reportId
+      ? [body.reportId]
+      : (await listReports()).map((ref) => ref.reportId);
+    return reply.send({ reanalyzed: await reanalyzeStored(ids, body.save) });
+  });
+
+  // The budgets every verdict is graded against. Read-only.
+  app.get('/targets', async () => loadTargets());
+
+  registerWebUi(app, options.webDir ?? DEFAULT_WEB_DIR);
 
   app.get<{ Params: { jobId: string } }>('/jobs/:jobId', async (req, reply) => {
     const job = jobs.get(req.params.jobId);
@@ -416,7 +604,12 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
 
   app
     .listen({ port, host })
-    .then(() => app.log.info({ host, port }, 'psi-api listening'))
+    .then(() => {
+      app.log.info({ host, port }, 'psi-api listening');
+      if (existsSync(path.join(DEFAULT_WEB_DIR, 'index.html'))) {
+        app.log.info(`UI ready at http://${host}:${port}/`);
+      }
+    })
     .catch((error) => {
       app.log.error(error);
       process.exit(1);

@@ -3,3 +3,9 @@ dist/
 .env
 data/
 *.log
+
+# Next.js UI build output
+web/.next/
+web/out/
+web/next-env.d.ts
+web/*.tsbuildinfo
