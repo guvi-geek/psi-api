@@ -4,7 +4,7 @@ import { useEffect, useId, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import { CopyButton } from './copy-button';
 import { href } from './router';
-import { requestRows, requestsFromParams, requestsToCli, requestsToParams, requestTotals, type RequestFilters } from './workqueue';
+import { requestRows, requestsFromParams, requestsToCli, requestsToParams, requestTotals, type RequestFilters } from './requests';
 
 /** The CLI's --requests: every request the median run made. */
 export function RequestsView({ report, params }: { report: AggregatedReport; params: URLSearchParams }) {

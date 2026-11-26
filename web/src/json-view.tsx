@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import { formatBytes } from '../../src/render';
 import { CopyButton } from './copy-button';
-import { jsonSections } from './workqueue';
+import { jsonSections } from './requests';
 
 /** The stored report.json, whole or one section at a time, to read, copy or download. */
 export function JsonView({ report }: { report: AggregatedReport }) {
@@ -50,7 +50,7 @@ export function JsonView({ report }: { report: AggregatedReport }) {
       </pre>
       <p className="note">
         This is report.json as saved in data/. The CLI&apos;s --json adds four computed keys: images, matchedInsights,
-        validity and warnings. Their content is on the Overview, Findings and Work queue tabs.
+        validity and warnings. Their content is on the Overview and Findings tabs.
       </p>
     </div>
   );

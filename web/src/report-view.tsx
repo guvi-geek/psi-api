@@ -21,7 +21,6 @@ import { CopyButton } from './copy-button';
 import { FindingsView } from './findings-view';
 import { JsonView } from './json-view';
 import { RequestsView } from './requests-view';
-import { WorkQueueView } from './workqueue-view';
 import { href } from './router';
 import { formatWhen, measuredAt } from './run';
 
@@ -75,7 +74,6 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'findings', label: `Findings ${report.insights.length}` },
-    { id: 'queue', label: 'Work queue' },
     { id: 'requests', label: `Requests ${report.requests?.length ?? 0}` },
     { id: 'json', label: 'JSON' },
   ] as const;
@@ -97,7 +95,6 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
       </nav>
       {tab === 'overview' && <Overview report={report} validity={validity} />}
       {tab === 'findings' && <FindingsView report={report} params={params} />}
-      {tab === 'queue' && <WorkQueueView report={report} params={params} />}
       {tab === 'requests' && <RequestsView report={report} params={params} />}
       {tab === 'json' && <JsonView report={report} />}
     </section>
