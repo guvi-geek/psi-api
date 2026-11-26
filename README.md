@@ -699,9 +699,12 @@ The audit list is derived from the response itself — the performance category'
 ```json
 {
   "mobile":  { "score": 90, "lcp": 2500, "tbt": 200, "cls": 0.1, "fcp": 1800, "speedIndex": 3400 },
-  "desktop": { "score": 90, "lcp": 1800, "tbt": 150, "cls": 0.1, "fcp": 1200, "speedIndex": 2400 }
+  "desktop": { "score": 90, "lcp": 1800, "tbt": 150, "cls": 0.1, "fcp": 1200, "speedIndex": 2400 },
+  "field":   { "inp": 200, "ttfb": 900 }
 }
 ```
+
+`field` holds targets for the real-user (CrUX) p75 only, for both devices. The web UI's **Real users** panel judges each CrUX value on its `field` target when there is one, else on the lab target for the same metric. They never grade a report: the verdict, `meetsTarget` and `gaps` read the `mobile` or `desktop` block alone, so INP (which the lab cannot measure) and real-user TTFB get a target without changing any lab result. `GET /targets` returns the whole file, `field` included.
 
 Every aggregated report includes:
 

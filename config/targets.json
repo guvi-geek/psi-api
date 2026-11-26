@@ -14,5 +14,9 @@
     "cls": 0.1,
     "fcp": 1200,
     "speedIndex": 2400
+  },
+  "field": {
+    "inp": 200,
+    "ttfb": 900
   }
 }

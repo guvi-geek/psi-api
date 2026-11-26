@@ -31,6 +31,8 @@ const BUDGET_ROWS: Array<{ key: keyof Targets['mobile']; label: string; unit: st
   { key: 'cls', label: 'Cumulative layout shift', unit: '' },
 ];
 
+const FIELD_LABELS: Record<string, string> = { lcp: 'LCP', fcp: 'FCP', cls: 'CLS', inp: 'INP', ttfb: 'TTFB' };
+
 function Home() {
   const { data } = useApi<Targets>('/targets');
   return (
@@ -62,6 +64,15 @@ function Home() {
             </tbody>
           </table>
           <p className="note">Set in config/targets.json. A score must reach the target; every other metric must stay under it.</p>
+          {data.field && Object.keys(data.field).length > 0 && (
+            <p className="note">
+              Real users (CrUX) only:{' '}
+              {Object.entries(data.field)
+                .map(([key, value]) => `${FIELD_LABELS[key] ?? key} ${value}${key === 'cls' ? '' : 'ms'}`)
+                .join(', ')}
+              . These colour a report&apos;s Real users panel and never count toward its verdict.
+            </p>
+          )}
         </div>
       )}
     </section>

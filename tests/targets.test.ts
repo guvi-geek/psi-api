@@ -21,6 +21,18 @@ describe('loadTargets', () => {
     expect(loaded.mobile.speedIndex).toBe(3400);
     expect(loaded.mobile.tbt).toBe(200);
   });
+
+  it('carries CrUX-only targets for INP and TTFB that never grade a report', () => {
+    const loaded = loadTargets();
+    expect(loaded.field).toEqual({ inp: 200, ttfb: 900 });
+    // A lab TTFB far over 900ms and an INP-sized value change nothing: grading reads the device block only.
+    const result = compareToTargets(
+      fakeReport({ score: 95, metrics: { lcp: 2000, tbt: 100, cls: 0.05, fcp: 1500, speedIndex: 3000, ttfb: 5000, inp: 900 } }),
+      loaded,
+    );
+    expect(result.gaps.map((gap) => gap.metric).sort()).toEqual(['cls', 'fcp', 'lcp', 'score', 'speedIndex', 'tbt']);
+    expect(result.meetsTarget).toBe(true);
+  });
 });
 
 describe('compareToTargets', () => {

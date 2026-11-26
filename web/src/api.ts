@@ -65,4 +65,6 @@ export function startRun(request: RunRequest): Promise<{ jobId: string; status: 
 }
 
 export type Budget = { score: number; lcp: number; tbt: number; cls: number; fcp: number; speedIndex: number };
-export type Targets = { mobile: Budget; desktop: Budget };
+/** CrUX-only targets, shown on a report's real-user panel. They never count toward a verdict. */
+export type FieldTargets = Partial<Record<'lcp' | 'fcp' | 'cls' | 'inp' | 'ttfb', number>>;
+export type Targets = { mobile: Budget; desktop: Budget; field?: FieldTargets };

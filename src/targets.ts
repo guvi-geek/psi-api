@@ -10,7 +10,13 @@ const CONFIG_PATH = path.resolve(
   'targets.json',
 );
 
-export type Targets = Record<Strategy, Record<string, number>>;
+/**
+ * Lab targets per device, which grade every report, plus `field`: targets for
+ * the real-user (CrUX) p75 only, for metrics the lab cannot grade (INP) or that
+ * are judged on real users (TTFB). Grading reads `config[strategy]` alone, so
+ * the field block never changes a verdict.
+ */
+export type Targets = Record<Strategy, Record<string, number>> & { field?: Record<string, number> };
 
 let cached: Targets | null = null;
 

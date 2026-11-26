@@ -178,6 +178,24 @@ describe('fieldRows', () => {
     expect(rows.get('inp')).toMatchObject({ target: '—', severity: undefined });
     expect(rows.get('ttfb')).toMatchObject({ value: 'Not in CrUX', severity: undefined });
   });
+
+  it('judges INP and TTFB on the CrUX-only targets, which win over a lab target', () => {
+    const r = report();
+    r.fieldData = {
+      loadingExperience: {
+        metrics: {
+          LARGEST_CONTENTFUL_PAINT_MS: { percentile: 2900 },
+          INTERACTION_TO_NEXT_PAINT: { percentile: 150 },
+          EXPERIMENTAL_TIME_TO_FIRST_BYTE: { percentile: 950 },
+        },
+      },
+    };
+    const rows = new Map(fieldRows(r, { inp: 200, ttfb: 900 })!.map((row) => [row.key, row]));
+    expect(rows.get('inp')).toMatchObject({ value: '150ms', target: '200ms', severity: 'good' });
+    expect(rows.get('ttfb')).toMatchObject({ value: '950ms', target: '900ms', severity: 'bad' });
+    expect(rows.get('lcp')).toMatchObject({ target: '2500ms', severity: 'bad' });
+    expect(new Map(fieldRows(r, { lcp: 3000 })!.map((row) => [row.key, row])).get('lcp')).toMatchObject({ target: '3000ms', severity: 'good' });
+  });
 });
 
 describe('statsTable', () => {

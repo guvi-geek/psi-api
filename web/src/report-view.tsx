@@ -4,7 +4,7 @@ import { Fragment, useEffect, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import type { MeasurementValidity } from '../../src/validity';
 import { environmentLine, lighthouseLabel } from '../../src/render';
-import { api, ApiError, startRun } from './api';
+import { api, ApiError, startRun, type Targets } from './api';
 import {
   fieldRows,
   metricRows,
@@ -21,6 +21,7 @@ import { RequestsView } from './requests-view';
 import { SeoView } from './seo-view';
 import { href } from './router';
 import { formatWhen, measuredAt } from './run';
+import { useApi } from './use-api';
 
 interface Loaded {
   report: AggregatedReport;
@@ -362,7 +363,9 @@ function MetricDetail({ row }: { row: MetricRow }) {
 }
 
 function FieldBlock({ report }: { report: AggregatedReport }) {
-  const rows = fieldRows(report);
+  // CrUX-only targets (config/targets.json `field`), e.g. INP and TTFB, which the lab cannot grade.
+  const { data: targets } = useApi<Targets>('/targets');
+  const rows = fieldRows(report, targets?.field);
   return (
     <div className="panel">
       <h2 className="panel-title">Real users (CrUX, 75th percentile)</h2>
@@ -386,7 +389,10 @@ function FieldBlock({ report }: { report: AggregatedReport }) {
               ))}
             </tbody>
           </table>
-          <p className="note">Green is at or under the lab target, red is over it. A metric with no target stays plain.</p>
+          <p className="note">
+            Green is at or under the target, red is over it. A metric with a real-user target (config/targets.json,
+            field) is judged on it; the rest use the lab targets. A metric with no target stays plain.
+          </p>
         </>
       ) : (
         <p className="muted">

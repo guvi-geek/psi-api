@@ -202,18 +202,22 @@ export interface FieldRow {
   key: string;
   name: string;
   value: string;
-  /** The lab target for the same metric, or '—' when the target set has none. */
+  /** The CrUX-only target, else the lab target for the same metric, else '—'. */
   target: string;
   /** Good at or under the target, bad over it. Absent with no target or no CrUX value. */
   severity?: Severity;
 }
 
-/** CrUX real-user p75 for the measured URL, judged on the lab targets. `null` when CrUX has no data. */
-export function fieldRows(report: Report): FieldRow[] | null {
+/**
+ * CrUX real-user p75 for the measured URL. Each is judged on its CrUX-only
+ * target (config/targets.json `field`, e.g. INP and TTFB) when there is one,
+ * else on the lab target. `null` when CrUX has no data.
+ */
+export function fieldRows(report: Report, fieldTargets: Record<string, number | undefined> = {}): FieldRow[] | null {
   if (!fieldDataPresent(report.fieldData)) return null;
   return (['lcp', 'fcp', 'cls', 'inp', 'ttfb'] as const).map((key) => {
     const value = fieldP75(report.fieldData, key);
-    const target = report.targets.targets[key];
+    const target = fieldTargets[key] ?? report.targets.targets[key];
     // Every field metric is lower-is-better.
     const severity: Severity | undefined =
       value === undefined || target === undefined ? undefined : value <= target ? 'good' : 'bad';
