@@ -26,7 +26,6 @@ import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
 import { UrlValidationError } from './psiClient.js';
 import { getDataDir, listReports, loadReport, loadRuns, saveReport } from './storage.js';
-import { compareReports, defaultCompareMetric } from './compare.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { loadTargets } from './targets.js';
 import { assessMeasurement } from './validity.js';
@@ -351,13 +350,6 @@ const insightsBody = z.object({
     .optional(),
 });
 
-const compareQuery = z.object({
-  before: z.string().min(1),
-  after: z.string().min(1),
-  // Same list the CLI's --compare --metric accepts.
-  metric: z.enum(METRIC_KEYS).optional(),
-});
-
 const reanalyzeBody = z.object({
   /** Omit to rebuild every stored report, like the CLI's bare --reanalyze. */
   reportId: z.string().min(1).optional(),
@@ -555,21 +547,6 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       });
     }
     return { reports };
-  });
-
-  // The CLI's --compare <before> <after> --metric m. Same verdict, same code path.
-  app.get('/compare', async (req, reply) => {
-    const query = compareQuery.parse(compact(req.query));
-    const before = await loadReport(query.before);
-    if (!before) return reply.status(404).send(notFound(query.before));
-    const after = await loadReport(query.after);
-    if (!after) return reply.status(404).send(notFound(query.after));
-    const metric = query.metric ?? defaultCompareMetric(before);
-    return reply.send({
-      beforeId: query.before,
-      afterId: query.after,
-      ...compareReports(before, after, metric),
-    });
   });
 
   // The CLI's --reanalyze. Free: rebuilds from runs.json, never calls PSI.

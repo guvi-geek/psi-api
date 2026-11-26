@@ -8,7 +8,6 @@ export type Route =
   | { name: 'home' }
   | { name: 'report'; reportId: string; params: URLSearchParams }
   | { name: 'run'; jobId: string }
-  | { name: 'compare'; before?: string; after?: string; metric?: string }
   | { name: 'missing'; path: string };
 
 function decode(part: string): string | null {
@@ -32,14 +31,6 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'run' && parts[1]) {
     const jobId = decode(parts[1]);
     return jobId ? { name: 'run', jobId } : { name: 'missing', path };
-  }
-  if (parts[0] === 'compare') {
-    return {
-      name: 'compare',
-      before: params.get('before') ?? undefined,
-      after: params.get('after') ?? undefined,
-      metric: params.get('metric') ?? undefined,
-    };
   }
   return { name: 'missing', path };
 }
@@ -67,12 +58,4 @@ export const href = {
     return `#/report/${encodeURIComponent(id)}${query ? `?${query}` : ''}`;
   },
   run: (jobId: string) => `#/run/${encodeURIComponent(jobId)}`,
-  compare: (before?: string, after?: string, metric?: string) => {
-    const params = new URLSearchParams();
-    if (before) params.set('before', before);
-    if (after) params.set('after', after);
-    if (metric) params.set('metric', metric);
-    const query = params.toString();
-    return `#/compare${query ? `?${query}` : ''}`;
-  },
 };

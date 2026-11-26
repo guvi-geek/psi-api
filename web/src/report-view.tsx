@@ -16,10 +16,8 @@ import {
   type MetricRow,
   type SpreadItem,
 } from './overview';
-import { previousOf, rerunRequest } from './compare';
+import { rerunRequest } from './reanalyze';
 import { CopyButton } from './copy-button';
-import { useApi } from './use-api';
-import type { ReportRow } from './run';
 import { FindingsView } from './findings-view';
 import { JsonView } from './json-view';
 import { RequestsView } from './requests-view';
@@ -108,8 +106,6 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
 
 function ReportHeader({ report }: { report: AggregatedReport }) {
   const measured = measuredAt(report.reportId, report.generatedAt);
-  const { data } = useApi<{ reports: ReportRow[] }>('/reports');
-  const previous = previousOf(data?.reports ?? [], report.reportId);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const request = rerunRequest(report);
@@ -141,13 +137,6 @@ function ReportHeader({ report }: { report: AggregatedReport }) {
           </p>
         </div>
         <div className="report-actions">
-          <a
-            className="button button-quiet"
-            href={href.compare(previous?.reportId, report.reportId)}
-            title={previous ? `Compare with ${previous.reportId}, the previous report of this page` : 'Compare with another report'}
-          >
-            Compare
-          </a>
           <button
             type="button"
             className="button button-quiet"

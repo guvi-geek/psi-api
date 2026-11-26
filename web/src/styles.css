@@ -1634,17 +1634,7 @@ a.tab:hover {
   line-height: 1.55;
 }
 
-/* ---------- compare and re-analyze ---------- */
-
-.sidebar-head {
-  gap: 10px;
-}
-.sidebar-head .sidebar-count {
-  margin-right: auto;
-}
-.sidebar-compare {
-  font-size: 13px;
-}
+/* ---------- report header ---------- */
 
 .report-header-wrap {
   margin-bottom: 20px;
@@ -1663,135 +1653,6 @@ a.tab:hover {
   margin-top: 12px;
 }
 
-.reanalyze {
-  display: grid;
-  gap: 14px;
-}
-.reanalyze-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 20px;
-}
-.reanalyze-intro {
-  margin: 0;
-  max-width: 64ch;
-  font-size: 14px;
-  color: var(--muted);
-}
-.reanalyze-actions {
-  display: flex;
-  gap: 8px;
-}
-.reanalyze-result {
-  display: grid;
-  justify-items: start;
-  gap: 12px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-}
-.reanalyze-result p {
-  margin: 0;
-}
-.reanalyze-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 10px;
-}
-.reanalyze-list .alert-list {
-  margin-top: 4px;
-}
-.home-reanalyze {
-  margin-top: 16px;
-}
-
-.compare-pickers {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: end;
-  gap: 12px;
-}
-.compare-metric {
-  grid-column: 1 / -1;
-  max-width: 360px;
-}
-/* A select is as wide as its longest option unless told otherwise. */
-.compare-pickers .field {
-  min-width: 0;
-}
-.compare-pickers .input {
-  width: 100%;
-  min-width: 0;
-}
-.swap {
-  font-size: 18px;
-  padding: 0 10px;
-}
-/* A footer row of the pickers panel: separated by a hairline, marked in amber. */
-.compare-note {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  margin: 4px 0 0;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
-  font-size: 14px;
-  color: var(--text);
-}
-.compare-note::before {
-  content: '';
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--warn);
-  transform: translateY(-1px);
-}
-
-/* The result sits clear of the pickers. */
-.compare-body {
-  margin-top: 20px;
-}
-
-.verdict-panel {
-  border-left-width: 3px;
-}
-.verdict-good {
-  border-left-color: var(--good);
-}
-.verdict-bad {
-  border-left-color: var(--bad);
-}
-.verdict-warn {
-  border-left-color: var(--warn);
-}
-.verdict-panel-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px 14px;
-}
-.compare-verdict {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-}
-.compare-metric-name {
-  color: var(--muted);
-}
-.compare-reason {
-  margin: 10px 0 6px;
-  max-width: 80ch;
-}
-.compare-change {
-  margin: 0;
-  font-size: 14px;
-  color: var(--muted);
-}
 .strong {
   font-weight: 600;
 }
@@ -1863,12 +1724,6 @@ a.tab:hover {
   }
   .workspace {
     padding: 24px 16px 48px;
-  }
-  .compare-pickers {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .swap {
-    justify-self: start;
   }
   .report-header {
     flex-direction: column;

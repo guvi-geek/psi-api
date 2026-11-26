@@ -1,6 +1,6 @@
 /**
  * The routes the web UI needs on top of the original API: the CLI's --list,
- * --compare, --reanalyze and --no-save, plus live job progress. Each must give
+ * --reanalyze and --no-save, plus live job progress. Each must give
  * the same answer the CLI gives, because both read the same library code.
  */
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
@@ -9,7 +9,6 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { aggregateReports } from '../src/aggregate.js';
-import { compareReports, defaultCompareMetric } from '../src/compare.js';
 import { applyTargets, loadTargets } from '../src/targets.js';
 import { listReports, loadReport, saveReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
@@ -97,56 +96,6 @@ describe('GET /reports', () => {
     expect(typeof first.meetsTarget).toBe('boolean');
     expect(first.targetsTotal).toBeGreaterThan(0);
     expect(first.targetsFailing).toBeLessThanOrEqual(first.targetsTotal);
-  });
-});
-
-describe('GET /compare', () => {
-  it('returns the same verdict the CLI computes', async () => {
-    const response = await app.inject({
-      method: 'GET',
-      url: `/compare?before=${BEFORE_ID}&after=${AFTER_ID}&metric=lcp`,
-    });
-    expect(response.statusCode).toBe(200);
-    const body = response.json();
-    const before = (await loadReport(BEFORE_ID, dir))!;
-    const after = (await loadReport(AFTER_ID, dir))!;
-    expect(body).toEqual({ beforeId: BEFORE_ID, afterId: AFTER_ID, ...compareReports(before, after, 'lcp') });
-    expect(body.verdict).toBe('KEEP');
-  });
-
-  it('picks the CLI default metric when none is given', async () => {
-    const body = (
-      await app.inject({ method: 'GET', url: `/compare?before=${BEFORE_ID}&after=${AFTER_ID}` })
-    ).json();
-    const before = (await loadReport(BEFORE_ID, dir))!;
-    expect(body.metric).toBe(defaultCompareMetric(before));
-  });
-
-  it('404s for an unknown report', async () => {
-    const response = await app.inject({
-      method: 'GET',
-      url: `/compare?before=${BEFORE_ID}&after=2026-01-01T00-00-00Z-mobile`,
-    });
-    expect(response.statusCode).toBe(404);
-    expect(response.json().error.code).toBe('NOT_FOUND');
-  });
-
-  it('rejects a missing id or an unknown metric', async () => {
-    expect((await app.inject({ method: 'GET', url: `/compare?before=${BEFORE_ID}` })).statusCode).toBe(400);
-    const bad = await app.inject({
-      method: 'GET',
-      url: `/compare?before=${BEFORE_ID}&after=${AFTER_ID}&metric=nope`,
-    });
-    expect(bad.statusCode).toBe(400);
-    expect(bad.json().error.code).toBe('INVALID_PARAMS');
-  });
-
-  it('accepts the same metrics as the CLI, which does not take score', async () => {
-    const response = await app.inject({
-      method: 'GET',
-      url: `/compare?before=${BEFORE_ID}&after=${AFTER_ID}&metric=score`,
-    });
-    expect(response.statusCode).toBe(400);
   });
 });
 
