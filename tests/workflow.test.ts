@@ -182,7 +182,7 @@ describe('measurement validity', () => {
     expect(validity.usable).toBe(true);
   });
 
-  it('rejects a 404, a cached batch, and a wide CPU spread', () => {
+  it('rejects a 404 and a cached batch, but not a wide CPU spread', () => {
     expect(
       assessMeasurement({
         report: report({ id: 'a', lcp: 2000 }),
@@ -195,12 +195,13 @@ describe('measurement validity', () => {
         runs: [{ ...run(400), fetchTime: 'same' }, { ...run(450), fetchTime: 'same' }],
       }).reasons.join(' '),
     ).toMatch(/cached report/);
+    // PSI chooses the machine per run, so a CPU spread alone does not discard a report.
     expect(
       assessMeasurement({
         report: report({ id: 'a', lcp: 2000 }),
         runs: [run(100), run(900)],
-      }).reasons.join(' '),
-    ).toMatch(/benchmark index ranges from 100 to 900/);
+      }),
+    ).toEqual({ usable: true, reasons: [] });
   });
 });
 
