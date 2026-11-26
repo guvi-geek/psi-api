@@ -38,7 +38,6 @@ export function FindingsView({ report, params }: { report: AggregatedReport; par
   const [filters, setFilters] = useState<Filters>(() => filtersFromParams(params));
   const [selected, setSelected] = useState<string | null>(() => params.get('insight'));
   const [result, setResult] = useState<{ data?: InsightsResponse; error?: ApiError }>({});
-  const [moreOpen, setMoreOpen] = useState(() => hasMoreFilters(filtersFromParams(params)));
   const query = filtersToApiQuery(filters);
 
   // Keep the page URL in step, in place: typing a search adds no history entries.
@@ -64,12 +63,8 @@ export function FindingsView({ report, params }: { report: AggregatedReport; par
   }, [query, report.reportId]);
 
   const update = (patch: Partial<Filters>) => setFilters((current) => ({ ...current, ...patch }));
-  // Bumped by Clear so the extra number fields start empty again.
-  const [clearCount, setClearCount] = useState(0);
-  const clearFilters = (keepSort: boolean) => {
+  const clearFilters = (keepSort: boolean) =>
     setFilters(keepSort ? { ...DEFAULT_FILTERS, sortBy: filters.sortBy, order: filters.order } : { ...DEFAULT_FILTERS });
-    setClearCount((count) => count + 1);
-  };
   // Stable, so the open drawer does not re-take focus each time results refresh.
   const closeDrawer = useCallback(() => setSelected(null), []);
   const active = activeFilterCount(filters);
@@ -81,11 +76,8 @@ export function FindingsView({ report, params }: { report: AggregatedReport; par
       <FilterBar
         filters={filters}
         update={update}
-        moreOpen={moreOpen}
-        setMoreOpen={setMoreOpen}
         active={active}
         clear={() => clearFilters(true)}
-        clearCount={clearCount}
         cli={filtersToCli(report.reportId, filters)}
       />
 
@@ -125,29 +117,14 @@ export function FindingsView({ report, params }: { report: AggregatedReport; par
   );
 }
 
-function hasMoreFilters(filters: Filters): boolean {
-  return (
-    filters.minSavingsMs !== undefined ||
-    filters.minSavingsBytes !== undefined ||
-    filters.maxScore !== undefined ||
-    filters.minFirstPartyRatio !== undefined ||
-    filters.hasItems !== undefined ||
-    filters.limit !== undefined ||
-    filters.id.length > 0
-  );
-}
-
 function FilterBar(props: {
   filters: Filters;
   update: (patch: Partial<Filters>) => void;
-  moreOpen: boolean;
-  setMoreOpen: (open: boolean) => void;
   active: number;
   clear: () => void;
-  clearCount: number;
   cli: string;
 }) {
-  const { filters, update, moreOpen, setMoreOpen, active, clear, clearCount, cli } = props;
+  const { filters, update, active, clear, cli } = props;
   const ids = useId();
 
   return (
@@ -218,15 +195,6 @@ function FilterBar(props: {
         </button>
 
         <span className="filter-spacer" />
-        <button
-          type="button"
-          className="button button-quiet"
-          aria-expanded={moreOpen}
-          aria-controls={`${ids}-more`}
-          onClick={() => setMoreOpen(!moreOpen)}
-        >
-          More filters
-        </button>
         {active > 0 && (
           <button type="button" className="button button-quiet" onClick={clear}>
             Clear {active}
@@ -234,90 +202,8 @@ function FilterBar(props: {
         )}
         <CopyButton text={cli} label="Copy as CLI" />
       </div>
-
-      {moreOpen && (
-        <div className="more-filters" id={`${ids}-more`} key={clearCount}>
-          <NumberField label="Saving at least (ms)" value={filters.minSavingsMs} onChange={(value) => update({ minSavingsMs: value })} min={0} />
-          <NumberField label="Saving at least (bytes)" value={filters.minSavingsBytes} onChange={(value) => update({ minSavingsBytes: value })} min={0} />
-          <NumberField label="Score at most (0–1)" value={filters.maxScore} onChange={(value) => update({ maxScore: value })} min={0} max={1} step={0.05} />
-          <NumberField label="Ours at least (0–1)" value={filters.minFirstPartyRatio} onChange={(value) => update({ minFirstPartyRatio: value })} min={0} max={1} step={0.05} />
-          <label className="field">
-            <span className="field-label">Rows</span>
-            <select
-              className="input"
-              value={filters.hasItems === undefined ? 'any' : filters.hasItems ? 'with' : 'without'}
-              onChange={(event) =>
-                update({ hasItems: event.target.value === 'any' ? undefined : event.target.value === 'with' })
-              }
-            >
-              <option value="any">With or without rows</option>
-              <option value="with">Only with rows</option>
-              <option value="without">Only without rows</option>
-            </select>
-          </label>
-          <NumberField label="Show at most" value={filters.limit} onChange={(value) => update({ limit: value })} min={0} step={1} />
-          <label className="field field-wide">
-            <span className="field-label">Exact ids, comma separated</span>
-            <input
-              className="input mono"
-              value={filters.id.join(',')}
-              placeholder="unused-javascript,render-blocking-insight"
-              onChange={(event) =>
-                update({
-                  id: event.target.value
-                    .split(',')
-                    .map((part) => part.trim())
-                    .filter(Boolean),
-                })
-              }
-            />
-          </label>
-        </div>
-      )}
     </div>
   );
-}
-
-/** A number input that keeps what the person typed and reports only valid numbers. */
-function NumberField(props: {
-  label: string;
-  value?: number;
-  onChange: (value: number | undefined) => void;
-  min?: number;
-  max?: number;
-  step?: number;
-}) {
-  const { label, value, onChange, min, max, step } = props;
-  // Local text, so a half-typed "0." is kept; Clear remounts the field to empty it.
-  const [text, setText] = useState(value === undefined ? '' : String(value));
-  const invalid = text.trim() !== '' && !isValid(Number(text), min, max);
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <input
-        className="input"
-        type="number"
-        inputMode="decimal"
-        min={min}
-        max={max}
-        step={step ?? 'any'}
-        value={text}
-        aria-label={label}
-        aria-invalid={invalid}
-        onChange={(event) => {
-          setText(event.target.value);
-          const raw = event.target.value.trim();
-          const parsed = Number(raw);
-          if (raw === '') onChange(undefined);
-          else if (isValid(parsed, min, max)) onChange(parsed);
-        }}
-      />
-    </label>
-  );
-}
-
-function isValid(value: number, min?: number, max?: number): boolean {
-  return Number.isFinite(value) && (min === undefined || value >= min) && (max === undefined || value <= max);
 }
 
 function FindingsTable(props: { insights: AggregatedInsight[]; selected: string | null; onSelect: (id: string) => void }) {

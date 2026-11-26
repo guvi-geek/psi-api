@@ -13,62 +13,28 @@ export const SORT_FIELDS = ['savingsMs', 'savingsBytes', 'score', 'firstPartySha
 
 export type SortField = (typeof SORT_FIELDS)[number];
 
-/** Every CLI insight filter. Absent means "not set", like a flag left off. */
+/** The CLI insight filters the tab offers. */
 export interface Filters {
   search: string;
-  id: string[];
-  minSavingsMs?: number;
-  minSavingsBytes?: number;
-  maxScore?: number;
-  minFirstPartyRatio?: number;
-  /** true = --hasItems, false = --noItems. */
-  hasItems?: boolean;
   party: 'any' | 'first' | 'third';
   sortBy: SortField;
   order: 'asc' | 'desc';
-  limit?: number;
   /** --noFlaky */
   noFlaky: boolean;
 }
 
 export const DEFAULT_FILTERS: Filters = {
   search: '',
-  id: [],
   party: 'any',
   sortBy: 'savingsMs',
   order: 'desc',
   noFlaky: false,
 };
 
-const NUMBER_KEYS = ['minSavingsMs', 'minSavingsBytes', 'maxScore', 'minFirstPartyRatio', 'limit'] as const;
-
-/** The ranges the server accepts: ratios and scores in 0–1, a whole-number limit, no negatives. */
-function numberAllowed(key: (typeof NUMBER_KEYS)[number], value: number): boolean {
-  if (!Number.isFinite(value) || value < 0) return false;
-  if (key === 'minFirstPartyRatio' || key === 'maxScore') return value <= 1;
-  if (key === 'limit') return Number.isInteger(value);
-  return true;
-}
-
-const list = (value: string | null) =>
-  (value ?? '')
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-
 /** Filters from the page URL (#/report/<id>?tab=findings&party=first…). Unknown values are dropped. */
 export function filtersFromParams(params: URLSearchParams): Filters {
   const filters: Filters = { ...DEFAULT_FILTERS };
   filters.search = params.get('search') ?? '';
-  filters.id = list(params.get('id'));
-  for (const key of NUMBER_KEYS) {
-    const raw = params.get(key);
-    const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
-    if (numberAllowed(key, value)) filters[key] = value;
-  }
-  const items = params.get('items');
-  if (items === 'with') filters.hasItems = true;
-  if (items === 'without') filters.hasItems = false;
   const party = params.get('party');
   if (party === 'first' || party === 'third') filters.party = party;
   const sortBy = params.get('sortBy');
@@ -82,9 +48,6 @@ export function filtersFromParams(params: URLSearchParams): Filters {
 export function filtersToParams(filters: Filters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set('search', filters.search.trim());
-  if (filters.id.length) params.set('id', filters.id.join(','));
-  for (const key of NUMBER_KEYS) if (filters[key] !== undefined) params.set(key, String(filters[key]));
-  if (filters.hasItems !== undefined) params.set('items', filters.hasItems ? 'with' : 'without');
   if (filters.party !== 'any') params.set('party', filters.party);
   if (filters.sortBy !== 'savingsMs') params.set('sortBy', filters.sortBy);
   if (filters.order !== 'desc') params.set('order', filters.order);
@@ -96,9 +59,6 @@ export function filtersToParams(filters: Filters): URLSearchParams {
 export function filtersToApiQuery(filters: Filters): string {
   const params = new URLSearchParams();
   if (filters.search.trim()) params.set('search', filters.search.trim());
-  if (filters.id.length) params.set('id', filters.id.join(','));
-  for (const key of NUMBER_KEYS) if (filters[key] !== undefined) params.set(key, String(filters[key]));
-  if (filters.hasItems !== undefined) params.set('hasItems', String(filters.hasItems));
   params.set('party', filters.party);
   params.set('sortBy', filters.sortBy);
   params.set('order', filters.order);
@@ -110,10 +70,6 @@ export function filtersToApiQuery(filters: Filters): string {
 export function filtersToCli(reportId: string, filters: Filters): string {
   const args = ['npm run psi --', `--reportId ${reportId}`];
   if (filters.search.trim()) args.push(`--search "${filters.search.trim().replace(/"/g, '\\"')}"`);
-  if (filters.id.length) args.push(`--id ${filters.id.join(',')}`);
-  for (const key of NUMBER_KEYS) if (filters[key] !== undefined) args.push(`--${key} ${filters[key]}`);
-  if (filters.hasItems === true) args.push('--hasItems');
-  if (filters.hasItems === false) args.push('--noItems');
   if (filters.party !== 'any') args.push(`--party ${filters.party}`);
   if (filters.sortBy !== 'savingsMs') args.push(`--sortBy ${filters.sortBy}`);
   if (filters.order !== 'desc') args.push(`--order ${filters.order}`);
@@ -125,9 +81,6 @@ export function filtersToCli(reportId: string, filters: Filters): string {
 export function activeFilterCount(filters: Filters): number {
   let count = 0;
   if (filters.search.trim()) count += 1;
-  if (filters.id.length) count += 1;
-  for (const key of NUMBER_KEYS) if (filters[key] !== undefined) count += 1;
-  if (filters.hasItems !== undefined) count += 1;
   if (filters.party !== 'any') count += 1;
   if (filters.noFlaky) count += 1;
   return count;

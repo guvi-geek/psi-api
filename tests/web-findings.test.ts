@@ -58,16 +58,9 @@ afterAll(async () => {
 
 const FILTER_FIELDS = [
   'search',
-  'id',
-  'minSavingsMs',
-  'minSavingsBytes',
-  'maxScore',
-  'minFirstPartyRatio',
-  'hasItems',
   'party',
   'sortBy',
   'order',
-  'limit',
   'includeFlaky',
 ] as const;
 
@@ -101,12 +94,11 @@ function shellSplit(line: string): string[] {
 const CASES: Array<Partial<Filters>> = [
   {},
   { search: 'third party "cookies"' },
-  { maxScore: 0.9, sortBy: 'savingsMs' },
+  { sortBy: 'score' },
   { party: 'first', noFlaky: true },
-  { search: 'javascript', order: 'asc', limit: 3 },
-  { minSavingsMs: 100, minSavingsBytes: 2048, hasItems: true },
-  { hasItems: false, party: 'third', sortBy: 'savingsBytes' },
-  { minFirstPartyRatio: 0.5, sortBy: 'firstPartyShare', id: ['unused-javascript', 'render-blocking-resources'] },
+  { search: 'javascript', order: 'asc' },
+  { party: 'third', sortBy: 'savingsBytes' },
+  { sortBy: 'firstPartyShare' },
 ];
 
 describe('the CLI command and the server agree', () => {
@@ -156,45 +148,21 @@ describe('filters in the page URL', () => {
     const filters: Filters = {
       ...DEFAULT_FILTERS,
       search: 'third party',
-      id: ['a', 'b'],
-      minSavingsMs: 50,
-      minSavingsBytes: 1000,
-      maxScore: 0.5,
-      minFirstPartyRatio: 0.25,
-      hasItems: false,
       party: 'first',
       sortBy: 'score',
       order: 'asc',
-      limit: 10,
       noFlaky: true,
     };
     expect(filtersFromParams(filtersToParams(filters))).toEqual(filters);
-    expect(activeFilterCount(filters)).toBe(10);
+    expect(activeFilterCount(filters)).toBe(3);
     expect(activeFilterCount(DEFAULT_FILTERS)).toBe(0);
   });
 
   it('drops values the CLI would reject', () => {
-    const filters = filtersFromParams(new URLSearchParams('party=all&sortBy=x&maxScore=abc'));
-    expect(filters.party).toBe('any');
-    expect(filters.sortBy).toBe('savingsMs');
-    expect(filters.maxScore).toBeUndefined();
+    const filters = filtersFromParams(new URLSearchParams('party=all&sortBy=x&order=up'));
+    expect(filters).toEqual(DEFAULT_FILTERS);
   });
 
-  it('drops numbers outside what the server accepts, instead of erroring', () => {
-    const filters = filtersFromParams(
-      new URLSearchParams('minFirstPartyRatio=2&maxScore=-0.1&limit=1.5&minSavingsMs=-5&minSavingsBytes=100'),
-    );
-    expect(filters.minFirstPartyRatio).toBeUndefined();
-    expect(filters.maxScore).toBeUndefined();
-    expect(filters.limit).toBeUndefined();
-    expect(filters.minSavingsMs).toBeUndefined();
-    expect(filters.minSavingsBytes).toBe(100);
-    expect(filtersFromParams(new URLSearchParams('minFirstPartyRatio=1&maxScore=0&limit=0'))).toMatchObject({
-      minFirstPartyRatio: 1,
-      maxScore: 0,
-      limit: 0,
-    });
-  });
 });
 
 describe('findingRow', () => {
