@@ -226,6 +226,23 @@ describe('storage', () => {
     expect(page.map((entry) => entry.seoId)).toEqual([newer.seoId, older.seoId]);
   });
 
+  it('never overwrites: a taken id, on this host or another, moves a second later', async () => {
+    const first = at('2026-11-26T09:00:00.000Z', 'mobile');
+    const second = at('2026-11-26T09:00:00.000Z', 'mobile', 'https://www.guvi.in/');
+    const third = at('2026-11-26T09:00:00.000Z', 'mobile', 'https://other.test/');
+    await saveSeoCheck(first, dir);
+    await saveSeoCheck(second, dir);
+    await saveSeoCheck(third, dir);
+    expect([first.seoId, second.seoId, third.seoId]).toEqual([
+      '2026-11-26T09-00-00Z-mobile-seo',
+      '2026-11-26T09-00-01Z-mobile-seo',
+      '2026-11-26T09-00-02Z-mobile-seo',
+    ]);
+    expect((await loadSeoCheck(first.seoId, dir))!.url).toBe(URL_);
+    expect((await loadSeoCheck(second.seoId, dir))!.url).toBe('https://www.guvi.in/');
+    expect((await loadSeoCheck(third.seoId, dir))!.url).toBe('https://other.test/');
+  });
+
   it('is invisible to the report list, so no existing command sees it', async () => {
     await saveSeoCheck(at('2026-11-26T09:00:00.000Z', 'mobile'), dir);
     expect(await listReports(dir)).toEqual([]);

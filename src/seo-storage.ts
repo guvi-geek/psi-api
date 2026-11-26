@@ -1,7 +1,7 @@
 /** Saving, loading and listing SEO checks: data/<host>/seo/<seoId>.json. */
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { isSeoId, type SeoCheck, type SeoSummary } from './seo.js';
+import { isSeoId, makeSeoId, type SeoCheck, type SeoSummary } from './seo.js';
 import { dataDirForHost, getDataDir } from './storage.js';
 import type { Strategy } from './types.js';
 
@@ -12,13 +12,35 @@ function assertSeoId(seoId: string): void {
 }
 
 /** data/<host>/seo/<seoId>.json. Reports live in data/<host>/<reportId>/, so the two never meet. */
+/**
+ * Never overwrites. Ids have one-second resolution, so two checks started in
+ * the same second would share one; a taken id (under any host, since ids are
+ * looked up across hosts) moves one second later. `check.seoId` is updated in
+ * place, so callers report the id that was actually saved.
+ */
 export async function saveSeoCheck(check: SeoCheck, dataDir = getDataDir()): Promise<string> {
   assertSeoId(check.seoId);
   const dir = path.join(dataDirForHost(check.url, dataDir), SEO_DIR);
   await mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${check.seoId}.json`);
-  await writeFile(file, `${JSON.stringify(check, null, 2)}\n`, 'utf8');
-  return file;
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    if (!(await loadSeoCheck(check.seoId, dataDir))) {
+      const file = path.join(dir, `${check.seoId}.json`);
+      try {
+        await writeFile(file, `${JSON.stringify(check, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+        return file;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      }
+    }
+    check.seoId = nextSecond(check.seoId, check.strategy);
+  }
+  throw new Error(`no free SEO check id near ${check.seoId}`);
+}
+
+/** The same id one second later: 2026-11-26T10-00-00Z-mobile-seo → …T10-00-01Z-mobile-seo. */
+function nextSecond(seoId: string, strategy: Strategy): string {
+  const [, date, hours, minutes, seconds] = /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})Z/.exec(seoId)!;
+  return makeSeoId(strategy, new Date(Date.parse(`${date}T${hours}:${minutes}:${seconds}Z`) + 1000));
 }
 
 async function hostsIn(dataDir: string): Promise<string[]> {
