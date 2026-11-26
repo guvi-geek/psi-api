@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useState } from 'react';
 
 /**
  * Hash routes (#/report/<id>), so UI paths never collide with the API's own
@@ -23,10 +23,15 @@ export function parseRoute(hash: string): Route {
   return { name: 'missing', path };
 }
 
-export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parseRoute(location.hash));
+/**
+ * `null` until mounted: the page is pre-rendered at build time, where there is
+ * no location, so the hash is read only in the browser.
+ */
+export function useRoute(): Route | null {
+  const [route, setRoute] = useState<Route | null>(null);
   useEffect(() => {
     const onChange = () => setRoute(parseRoute(location.hash));
+    onChange();
     addEventListener('hashchange', onChange);
     return () => removeEventListener('hashchange', onChange);
   }, []);

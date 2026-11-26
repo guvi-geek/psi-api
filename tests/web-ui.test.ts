@@ -12,11 +12,15 @@ let app: FastifyInstance;
 beforeAll(async () => {
   root = await mkdtemp(path.join(tmpdir(), 'psi-api-web-'));
   const webDir = path.join(root, 'dist');
-  await mkdir(path.join(webDir, 'assets'), { recursive: true });
+  await mkdir(path.join(webDir, '_next', 'static', 'chunks'), { recursive: true });
   await writeFile(path.join(webDir, 'index.html'), '<!doctype html><title>PSI - API</title>');
-  await writeFile(path.join(webDir, 'assets', 'index-abc.js'), 'console.log(1)');
-  await writeFile(path.join(webDir, 'assets', 'notes.txt'), 'not a web asset');
+  await writeFile(path.join(webDir, '_next', 'static', 'chunks', 'app-abc.js'), 'console.log(1)');
+  await writeFile(path.join(webDir, '_next', 'unhashed.js'), 'console.log(2)');
+  await writeFile(path.join(webDir, '_next', 'notes.txt'), 'not a web asset');
   await writeFile(path.join(root, 'secret.json'), '{"leak":true}');
+  // A servable type outside _next: only the path check can stop this one.
+  await writeFile(path.join(root, 'outside.js'), 'leak()');
+  await writeFile(path.join(webDir, 'outside.js'), 'leak()');
   app = buildServer({ webDir });
   await app.ready();
 });
@@ -35,15 +39,21 @@ describe('web UI serving', () => {
     expect(response.body).toContain('PSI - API');
   });
 
-  it('serves hashed assets with their type and an immutable cache', async () => {
-    const response = await app.inject({ method: 'GET', url: '/assets/index-abc.js' });
+  it('serves hashed /_next/static files with their type and an immutable cache', async () => {
+    const response = await app.inject({ method: 'GET', url: '/_next/static/chunks/app-abc.js' });
     expect(response.statusCode).toBe(200);
     expect(response.headers['content-type']).toMatch(/text\/javascript/);
     expect(response.headers['cache-control']).toContain('immutable');
   });
 
-  it('refuses paths outside assets, unknown types and missing files', async () => {
-    for (const url of ['/assets/..%2Fsecret.json', '/assets/..%2F..%2Fsecret.json', '/assets/notes.txt', '/assets/nope.js']) {
+  it('does not cache /_next files outside static for good', async () => {
+    const response = await app.inject({ method: 'GET', url: '/_next/unhashed.js' });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-cache');
+  });
+
+  it('refuses paths outside _next, unknown types and missing files', async () => {
+    for (const url of ['/_next/..%2Foutside.js', '/_next/..%2F..%2Foutside.js', '/_next/..%2F..%2Fsecret.json', '/_next/static/..%2F..%2F..%2Fsecret.json', '/_next/notes.txt', '/_next/static/nope.js']) {
       const response = await app.inject({ method: 'GET', url });
       expect(response.statusCode, url).toBe(404);
       expect(response.body).not.toContain('leak');

@@ -15,8 +15,8 @@
     "test": "vitest run",
     "test.watch": "vitest",
     "typecheck": "tsc -p tsconfig.test.json",
-    "web:dev": "vite --config web/vite.config.ts",
-    "web:build": "vite build --config web/vite.config.ts",
+    "web:dev": "next dev web -p 5190",
+    "web:build": "next build web",
     "web:typecheck": "tsc -p web/tsconfig.json",
     "ui": "npm run web:build && tsx src/server.ts"
   },
@@ -28,17 +28,18 @@
   "devDependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
-    "@preact/preset-vite": "^2.10.6",
     "@types/node": "^22.10.5",
-    "preact": "^10.29.8",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "next": "^16.4.6",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
-    "vite": "^6.4.6",
     "vitest": "^2.1.8"
   },
   "allowScripts": {
     "esbuild@0.28.2": true,
-    "esbuild@0.21.5": true,
-    "esbuild@0.25.12": true
+    "esbuild@0.21.5": true
   }
 }

@@ -171,12 +171,12 @@ function compact(query: unknown): Record<string, unknown> {
 export interface ServerOptions {
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
-  /** Built web UI to serve at `/`. Defaults to web/dist; skipped when it has not been built. */
+  /** Built web UI to serve at `/`. Defaults to web/out (the Next.js export); skipped when it has not been built. */
   webDir?: string;
 }
 
-/** web/dist, from either src/server.ts or dist/server.js: both sit one level under the repo root. */
-const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'dist');
+/** web/out, from either src/server.ts or dist/server.js: both sit one level under the repo root. */
+const DEFAULT_WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'web', 'out');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -191,13 +191,14 @@ const MIME: Record<string, string> = {
 };
 
 /**
- * Serves the built UI: `/` is index.html, `/assets/*` are Vite's hashed files.
- * The UI routes with the URL hash, so no API path is ever shadowed.
+ * Serves the built UI: `/` is index.html, `/_next/*` is the Next.js export's
+ * files (hashed under /_next/static, so cached for good). The UI routes with
+ * the URL hash, so no API path is ever shadowed.
  */
 function registerWebUi(app: FastifyInstance, webDir: string): void {
   const indexFile = path.join(webDir, 'index.html');
   if (!existsSync(indexFile)) return;
-  const assetsDir = path.join(webDir, 'assets');
+  const assetsDir = path.join(webDir, '_next');
 
   app.get('/', async (_req, reply) =>
     reply
@@ -206,7 +207,7 @@ function registerWebUi(app: FastifyInstance, webDir: string): void {
       .send(await readFile(indexFile)),
   );
 
-  app.get<{ Params: { '*': string } }>('/assets/*', async (req, reply) => {
+  app.get<{ Params: { '*': string } }>('/_next/*', async (req, reply) => {
     const file = path.resolve(assetsDir, req.params['*']);
     const type = MIME[path.extname(file).toLowerCase()];
     if (!file.startsWith(assetsDir + path.sep) || !type) {
@@ -214,7 +215,11 @@ function registerWebUi(app: FastifyInstance, webDir: string): void {
     }
     try {
       const body = await readFile(file);
-      return reply.header('cache-control', 'public, max-age=31536000, immutable').type(type).send(body);
+      const hashed = file.startsWith(path.join(assetsDir, 'static') + path.sep);
+      return reply
+        .header('cache-control', hashed ? 'public, max-age=31536000, immutable' : 'no-cache')
+        .type(type)
+        .send(body);
     } catch {
       return reply.status(404).send({ error: { code: 'NOT_FOUND', message: 'no such asset' } });
     }
