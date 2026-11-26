@@ -15,8 +15,8 @@
     "test": "vitest run",
     "test.watch": "vitest",
     "typecheck": "tsc -p tsconfig.test.json",
-    "web:dev": "next dev web -p 5190",
-    "web:build": "next build web",
+    "web:dev": "next dev web -p 5190 --webpack",
+    "web:build": "next build web --webpack",
     "web:typecheck": "tsc -p web/tsconfig.json",
     "ui": "npm run web:build && tsx src/server.ts"
   },

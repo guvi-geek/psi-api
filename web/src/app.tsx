@@ -3,6 +3,7 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { type Health, type Targets } from './api';
 import { href, useRoute, type Route } from './router';
+import { ReportView } from './report-view';
 import { RunForm } from './run-form';
 import { RunView } from './run-view';
 import { Sidebar } from './sidebar';
@@ -101,7 +102,7 @@ function Shell({ route }: { route?: Route }) {
       <main className="workspace" id="main">
         {route?.name === 'home' && <Home />}
         {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
-        {route?.name === 'report' && <Placeholder title={route.reportId}>The report view is built in a later step.</Placeholder>}
+        {route?.name === 'report' && <ReportView reportId={route.reportId} />}
         {route?.name === 'compare' && <Placeholder title="Compare reports">The compare view is built in a later step.</Placeholder>}
         {route?.name === 'missing' && (
           <Placeholder title="Page not found">

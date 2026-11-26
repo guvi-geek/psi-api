@@ -21,8 +21,21 @@ export default function config(phase) {
     poweredByHeader: false,
     // Next 16 writes an AGENTS.md into the app folder on dev start; this repo keeps its own docs.
     agentRules: false,
-    turbopack: { root },
     outputFileTracingRoot: root,
+    /**
+     * Built with webpack (`--webpack` in package.json), not Turbopack, for one
+     * reason: the UI imports the CLI's own helpers from src/ (render, readout,
+     * rows) so the page and the terminal print the same numbers, and src/ uses
+     * Node ESM specifiers (`./types.js` for types.ts). Webpack maps those with
+     * extensionAlias; Turbopack in Next 16.4 cannot.
+     */
+    webpack(webpackConfig) {
+      webpackConfig.resolve.extensionAlias = {
+        ...webpackConfig.resolve.extensionAlias,
+        '.js': ['.ts', '.tsx', '.js'],
+      };
+      return webpackConfig;
+    },
   };
   if (phase === PHASE_DEVELOPMENT_SERVER) {
     return {
