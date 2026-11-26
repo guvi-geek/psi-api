@@ -792,6 +792,18 @@ a:hover {
   vertical-align: middle;
   animation: spin 800ms linear infinite;
 }
+/* A button that is working: still disabled, but not dimmed, so its spinner reads clearly. */
+.button[aria-busy='true']:disabled {
+  opacity: 1;
+  cursor: progress;
+}
+/* In a button: smaller, and spaced from its text. */
+.spinner-small {
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
 @keyframes spin {
   to {
     transform: rotate(360deg);

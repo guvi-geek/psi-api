@@ -74,9 +74,17 @@ export function SeoView({ report }: { report: AggregatedReport }) {
       className={`button ${primary ? 'button-primary' : 'button-quiet'}`}
       onClick={runCheck}
       disabled={checking}
+      aria-busy={checking}
       title={CHECK_TITLE}
     >
-      {checking ? 'Checking' : label}
+      {checking ? (
+        <>
+          <span className="spinner spinner-small" aria-hidden="true" />
+          Checking
+        </>
+      ) : (
+        label
+      )}
     </button>
   );
   const error = checkError && (
