@@ -3,6 +3,8 @@
 import { useCallback, useState, type ReactNode } from 'react';
 import { type Health, type Targets } from './api';
 import { href, useRoute, type Route } from './router';
+import { CompareView } from './compare-view';
+import { ReanalyzeBox } from './reanalyze-box';
 import { ReportView } from './report-view';
 import { RunForm } from './run-form';
 import { RunView } from './run-view';
@@ -31,7 +33,7 @@ const BUDGET_ROWS: Array<{ key: keyof Targets['mobile']; label: string; unit: st
   { key: 'cls', label: 'Cumulative layout shift', unit: '' },
 ];
 
-function Home() {
+function Home({ onChanged }: { onChanged: () => void }) {
   const { data } = useApi<Targets>('/targets');
   return (
     <section className="page">
@@ -64,6 +66,10 @@ function Home() {
           <p className="note">Set in config/targets.json. A score must reach the target; every other metric must stay under it.</p>
         </div>
       )}
+      <div className="panel home-reanalyze">
+        <h2 className="panel-title">Re-analyze saved reports</h2>
+        <ReanalyzeBox onSaved={onChanged} />
+      </div>
     </section>
   );
 }
@@ -100,10 +106,14 @@ function Shell({ route }: { route?: Route }) {
       </header>
       <Sidebar activeId={route?.name === 'report' ? route.reportId : undefined} version={reportsVersion} />
       <main className="workspace" id="main">
-        {route?.name === 'home' && <Home />}
+        {route?.name === 'home' && <Home onChanged={refreshReports} />}
         {route?.name === 'run' && <RunView jobId={route.jobId} onFinished={refreshReports} />}
-        {route?.name === 'report' && <ReportView reportId={route.reportId} params={route.params} />}
-        {route?.name === 'compare' && <Placeholder title="Compare reports">The compare view is built in a later step.</Placeholder>}
+        {route?.name === 'report' && (
+          <ReportView reportId={route.reportId} params={route.params} onChanged={refreshReports} />
+        )}
+        {route?.name === 'compare' && (
+          <CompareView before={route.before} after={route.after} metric={route.metric} version={reportsVersion} />
+        )}
         {route?.name === 'missing' && (
           <Placeholder title="Page not found">
             Nothing lives at {route.path}. <a href={href.home()}>Go to the start page</a>.

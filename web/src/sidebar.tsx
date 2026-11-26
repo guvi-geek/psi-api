@@ -17,6 +17,11 @@ export function Sidebar({ activeId, version }: { activeId?: string; version: num
       <div className="sidebar-head">
         <h2 className="sidebar-title">Reports</h2>
         {data && <span className="sidebar-count">{reports.length}</span>}
+        {reports.length > 1 && (
+          <a className="sidebar-compare" href={href.compare()}>
+            Compare
+          </a>
+        )}
       </div>
       {reports.length > 5 && (
         <input

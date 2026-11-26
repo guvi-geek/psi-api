@@ -8,7 +8,7 @@ export type Route =
   | { name: 'home' }
   | { name: 'report'; reportId: string; params: URLSearchParams }
   | { name: 'run'; jobId: string }
-  | { name: 'compare'; before?: string; after?: string }
+  | { name: 'compare'; before?: string; after?: string; metric?: string }
   | { name: 'missing'; path: string };
 
 export function parseRoute(hash: string): Route {
@@ -20,7 +20,12 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === 'report' && parts[1]) return { name: 'report', reportId: decodeURIComponent(parts[1]), params };
   if (parts[0] === 'run' && parts[1]) return { name: 'run', jobId: decodeURIComponent(parts[1]) };
   if (parts[0] === 'compare') {
-    return { name: 'compare', before: params.get('before') ?? undefined, after: params.get('after') ?? undefined };
+    return {
+      name: 'compare',
+      before: params.get('before') ?? undefined,
+      after: params.get('after') ?? undefined,
+      metric: params.get('metric') ?? undefined,
+    };
   }
   return { name: 'missing', path };
 }
@@ -48,10 +53,11 @@ export const href = {
     return `#/report/${encodeURIComponent(id)}${query ? `?${query}` : ''}`;
   },
   run: (jobId: string) => `#/run/${encodeURIComponent(jobId)}`,
-  compare: (before?: string, after?: string) => {
+  compare: (before?: string, after?: string, metric?: string) => {
     const params = new URLSearchParams();
     if (before) params.set('before', before);
     if (after) params.set('after', after);
+    if (metric) params.set('metric', metric);
     const query = params.toString();
     return `#/compare${query ? `?${query}` : ''}`;
   },

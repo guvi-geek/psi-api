@@ -16,7 +16,11 @@ import {
   type MetricRow,
   type SpreadItem,
 } from './overview';
+import { previousOf } from './compare';
 import { CopyButton } from './copy-button';
+import { ReanalyzeBox } from './reanalyze-box';
+import { useApi } from './use-api';
+import type { ReportRow } from './run';
 import { FindingsView } from './findings-view';
 import { JsonView } from './json-view';
 import { RequestsView } from './requests-view';
@@ -31,12 +35,20 @@ interface Loaded {
 }
 
 /** A saved report. Reading it costs no quota. */
-export function ReportView({ reportId, params }: { reportId: string; params: URLSearchParams }) {
+export function ReportView(props: { reportId: string; params: URLSearchParams; onChanged: () => void }) {
+  const { reportId, params, onChanged } = props;
+  // Bumped after a re-analysis is saved, so the page reloads the rewritten report.
+  const [version, setVersion] = useState(0);
   const [state, setState] = useState<{ data?: Loaded; error?: ApiError }>({});
+
+  // A new report starts blank; a reload of the same one (after a re-analysis is
+  // saved) keeps the page, and its open Re-analyze panel, on screen meanwhile.
+  useEffect(() => {
+    setState({});
+  }, [reportId]);
 
   useEffect(() => {
     let live = true;
-    setState({});
     const id = encodeURIComponent(reportId);
     Promise.all([
       api<AggregatedReport>(`/report/${id}`),
@@ -47,7 +59,7 @@ export function ReportView({ reportId, params }: { reportId: string; params: URL
     return () => {
       live = false;
     };
-  }, [reportId]);
+  }, [reportId, version]);
 
   if (state.error) {
     return (
@@ -80,7 +92,13 @@ export function ReportView({ reportId, params }: { reportId: string; params: URL
   const tab = tabs.find((entry) => entry.id === params.get('tab'))?.id ?? 'overview';
   return (
     <section className="page page-wide">
-      <ReportHeader report={report} />
+      <ReportHeader
+        report={report}
+        onSaved={() => {
+          setVersion((value) => value + 1);
+          onChanged();
+        }}
+      />
       <nav className="tabs" aria-label="Report views">
         {tabs.map((entry) => (
           <a
@@ -93,30 +111,68 @@ export function ReportView({ reportId, params }: { reportId: string; params: URL
           </a>
         ))}
       </nav>
-      {tab === 'overview' && <Overview report={report} validity={validity} />}
-      {tab === 'findings' && <FindingsView report={report} params={params} />}
-      {tab === 'queue' && <WorkQueueView report={report} params={params} />}
-      {tab === 'requests' && <RequestsView report={report} params={params} />}
-      {tab === 'json' && <JsonView report={report} />}
+      {/* Remounted after a re-analysis so every tab reads the rewritten report.
+          Filters update the URL in place, so a remount reads them from there. */}
+      <Fragment key={version}>
+        {(() => {
+          const tabParams = version === 0 ? params : new URLSearchParams(location.hash.split('?')[1] ?? '');
+          return (
+            <>
+              {tab === 'overview' && <Overview report={report} validity={validity} />}
+              {tab === 'findings' && <FindingsView report={report} params={tabParams} />}
+              {tab === 'queue' && <WorkQueueView report={report} params={tabParams} />}
+              {tab === 'requests' && <RequestsView report={report} params={tabParams} />}
+              {tab === 'json' && <JsonView report={report} />}
+            </>
+          );
+        })()}
+      </Fragment>
     </section>
   );
 }
 
-function ReportHeader({ report }: { report: AggregatedReport }) {
+function ReportHeader({ report, onSaved }: { report: AggregatedReport; onSaved: () => void }) {
   const generated = new Date(report.generatedAt);
+  const { data } = useApi<{ reports: ReportRow[] }>('/reports');
+  const previous = previousOf(data?.reports ?? [], report.reportId);
+  const [reanalyzeOpen, setReanalyzeOpen] = useState(false);
   return (
-    <header className="report-header">
-      <div className="report-heading">
-        <h1 className="page-title report-title mono">{report.url}</h1>
-        <p className="report-sub">
-          {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, {lighthouseLabel(report.lighthouseVersion)},{' '}
-          {report.stat} of {report.runsSucceeded}/{report.runsRequested} runs,{' '}
-          <time dateTime={report.generatedAt} title={generated.toLocaleString()}>
-            {formatWhen(report.generatedAt)}
-          </time>
-        </p>
+    <header className="report-header-wrap">
+      <div className="report-header">
+        <div className="report-heading">
+          <h1 className="page-title report-title mono">{report.url}</h1>
+          <p className="report-sub">
+            {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, {lighthouseLabel(report.lighthouseVersion)},{' '}
+            {report.stat} of {report.runsSucceeded}/{report.runsRequested} runs,{' '}
+            <time dateTime={report.generatedAt} title={generated.toLocaleString()}>
+              {formatWhen(report.generatedAt)}
+            </time>
+          </p>
+        </div>
+        <div className="report-actions">
+          <a
+            className="button button-quiet"
+            href={href.compare(previous?.reportId, report.reportId)}
+            title={previous ? `Compare with ${previous.reportId}, the previous report of this page` : 'Compare with another report'}
+          >
+            Compare
+          </a>
+          <button
+            type="button"
+            className="button button-quiet"
+            aria-expanded={reanalyzeOpen}
+            onClick={() => setReanalyzeOpen((open) => !open)}
+          >
+            Re-analyze
+          </button>
+          <CopyButton text={cliCommand(report.reportId)} label="Copy CLI command" />
+        </div>
       </div>
-      <CopyButton text={cliCommand(report.reportId)} label="Copy CLI command" />
+      {reanalyzeOpen && (
+        <div className="panel reanalyze-panel">
+          <ReanalyzeBox reportId={report.reportId} onSaved={onSaved} />
+        </div>
+      )}
     </header>
   );
 }
