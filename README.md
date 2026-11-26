@@ -1,16 +1,33 @@
 # psi-api
 
-Measure a public page from the terminal with the [Google PageSpeed Insights](https://developers.google.com/speed/docs/insights/v5/get-started) API.
+Measure a public page with the [Google PageSpeed Insights](https://developers.google.com/speed/docs/insights/v5/get-started) (PSI) API, from the terminal or from a web UI.
 
-One PSI run is noisy. The default command runs the page **10 times on mobile**, then prints the median, the spread, and which targets the page misses. Desktop performance is the same command with `--desktop`. The number of runs in a report is `--runs`.
+One PSI run is noisy. A report runs the page **10 times on mobile** by default, then shows the median, the range, and which targets the page misses. Desktop is the same command with `--desktop`; the number of runs is `--runs`. A separate SEO check reads the page's SEO with one PSI call.
 
 ```bash
-npm run psi -- <page>
+npm run psi -- <page>     # measure in the terminal
+npm run ui                # or open the web UI at http://127.0.0.1:3939
 ```
 
-That is the tool. The local HTTP server is optional and is documented at the end, under [Additional: HTTP server](#additional-http-server). You do not need it to measure a page. Reports are kept on disk, so you can re-read one later without spending more quota.
+The CLI, the web UI and the HTTP API share the same code and the same `data/` folder, so a report saved by one opens in the others. Reports are kept on disk, so re-reading one later costs no quota.
 
 > This folder is self-contained. It has its own `package.json` and its own git repo, and it does not depend on, or affect, the Qwik app in `../qwik-guvi`.
+
+## Contents
+
+1. [Setup](#setup): install, API key, environment
+2. [Quick start](#quick-start): the commands you will use most
+3. [Web UI](#web-ui)
+4. [Measure a page](#measure-a-page): what a report looks like
+5. [CLI](#cli): every option, [reading the output](#reading-the-output), [listing and comparing reports](#listing-and-comparing-reports), [`--reanalyze`](#--reanalyze-rebuilding-stored-reports-for-free), [SEO check](#seo-check)
+6. [Aggregation](#aggregation): how runs become one report, [first-party vs third party](#first-party-vs-third-party), [insights](#insights)
+7. [Insight groups](#insight-groups)
+8. [Targets](#targets): lab targets and real-user (CrUX) targets
+9. [Storage](#storage)
+10. [HTTP server and API](#http-server-and-api)
+11. [Development](#development)
+12. [Troubleshooting](#troubleshooting)
+13. [Automation](#automation)
 
 ---
 
@@ -46,36 +63,87 @@ Without a key, PSI falls back to a shared anonymous quota that is **frequently a
 | `PSI_CONCURRENCY` | `10` | Concurrent PSI calls per report (capped at 10). Quota is per run, not per concurrent call. Use `2` without an API key. |
 | `PSI_FIRST_PARTY_HOSTS` | *(unset)* | Extra domains the measured site owns, comma-separated (`guvi.in,guvi.co`). Without this, a CDN on a sister host is filed as third-party. |
 | `PSI_DATA_DIR` | `./data` | Where reports are written. |
-| `PORT` | `3939` | HTTP port for the [optional server](#additional-http-server). |
-| `HOST` | `127.0.0.1` | Bind address for the optional server. |
-| `LOG_LEVEL` | `info` | Pino log level for the optional server. |
+| `PORT` | `3939` | Port for the [server](#http-server-and-api): the web UI and the API. |
+| `HOST` | `127.0.0.1` | Bind address for the server. |
+| `LOG_LEVEL` | `info` | Pino log level for the server. |
+| `PSI_API_URL` | `http://127.0.0.1:3939` | Where `npm run web:dev` forwards API calls. Only used by the web UI's dev server. |
+
+---
+
+## Quick start
+
+Pass a public `http` or `https` page. Each measuring command spends one PSI call per run; reading saved results is free.
+
+```bash
+# Web UI: build it and serve it with the API at http://127.0.0.1:3939
+npm run ui
+
+# Performance, mobile, 10 runs (the default)
+npm run psi -- https://example.com/
+
+# Performance, desktop, 10 runs
+npm run psi -- https://example.com/ --desktop
+
+# Your own number of runs (1-40), mobile or desktop
+npm run psi -- https://example.com/ --runs 5
+npm run psi -- https://example.com/ --desktop --runs 15
+
+# SEO check: one PSI call, mobile or desktop
+npm run psi -- https://example.com/ --seo
+npm run psi -- https://example.com/ --seo --desktop
+
+# Read what you already measured - free, no PSI calls
+npm run psi -- --list                                  # saved reports, newest first
+npm run psi -- --reportId <reportId>                   # one report again
+npm run psi -- --reportId <reportId> --diagnose        # its ranked work queue
+npm run psi -- --seoList                               # saved SEO checks
+npm run psi -- --seoId <seoId>                         # one SEO check again
+```
+
+| You want | Command | PSI calls |
+| --- | --- | --- |
+| The web UI | `npm run ui` | none until you measure |
+| Mobile, 10 runs | `npm run psi -- <page>` | 10 |
+| Desktop, 10 runs | `npm run psi -- <page> --desktop` | 10 |
+| Mobile, N runs | `npm run psi -- <page> --runs <n>` | N |
+| Desktop, N runs | `npm run psi -- <page> --desktop --runs <n>` | N |
+| SEO, mobile | `npm run psi -- <page> --seo` | 1 |
+| SEO, desktop | `npm run psi -- <page> --seo --desktop` | 1 |
+| A saved report | `npm run psi -- --reportId <id>` | 0 |
+
+---
+
+## Web UI
+
+```bash
+npm run ui    # builds the UI, then serves it and the API at http://127.0.0.1:3939
+```
+
+A dark web UI for everything the CLI does. It is a static Next.js export in `web/`, served by the same server as the [HTTP API](#http-server-and-api), so nothing else has to run. It reads and writes the same `data/` folder as the CLI. `PORT` and `HOST` change the address.
+
+- **Header bar.** Measure a page: address, Mobile or Desktop, number of runs, the headline number (median, mean or most common) and whether to save. Measuring opens a live view where each run lands as PSI returns it. The dot on the right says whether `PSI_API_KEY` is set.
+- **Sidebar.** Saved reports, grouped by host, newest first, with a filter. Opening one costs no quota.
+- **Home page.** The targets every report is graded against, including the [real-user targets](#targets) for INP and TTFB.
+- **A report** has four tabs:
+  - **Overview:** score, verdict and failing targets in one panel; every metric against its target with a bar and runs in target; real-user (CrUX) p75 values in the same order; how it was measured; every statistic side by side. **Re-analyze** measures the page again with the report's own settings, as a new report.
+  - **Findings:** every Lighthouse finding with search, whose cost it is (anyone, ours, third party), hide flaky, and sort. Selecting one opens a drawer with its description, facts, per-run stats and rows, as `--items` prints them.
+  - **Requests:** every request the median run made, summarised per type ("40 Images - 683KB"), filtered by party, request type, order and count.
+  - **SEO:** the latest [SEO check](#seo-check) of the page and device, or a **Check SEO** button (1 PSI call). Failed audits come first with their details, then manual checks, passed and not applicable.
+
+The UI never recomputes what the server or the CLI's own code works out, so it shows the same numbers the CLI prints.
+
+For UI work, run the API and the Next.js dev server side by side:
+
+```bash
+npm run dev        # API (and the last built UI) on :3939, restarts on change
+npm run web:dev    # UI with hot reload on :5190, API calls forwarded to PSI_API_URL
+```
 
 ---
 
 ## Measure a page
 
-These are the commands. Each one prints a report a person can read. Pass a public `http` or `https` page link.
-
-```bash
-# Mobile, 10 PSI runs. This is the default: no extra flags.
-npm run psi -- https://example.com/
-
-# Desktop performance, still 10 PSI runs.
-npm run psi -- https://example.com/ --desktop
-
-# Mobile, with your own number of PSI runs (1–40).
-npm run psi -- https://example.com/ --runs 5
-
-# Desktop, with your own number of PSI runs.
-npm run psi -- https://example.com/ --desktop --runs 15
-```
-
-| You want | Command |
-| --- | --- |
-| Mobile, 10 runs | `npm run psi -- <page>` |
-| Desktop, 10 runs | `npm run psi -- <page> --desktop` |
-| Mobile, N runs | `npm run psi -- <page> --runs <n>` |
-| Desktop, N runs | `npm run psi -- <page> --desktop --runs <n>` |
+The commands are in [Quick start](#quick-start). Each one prints a report a person can read.
 
 `--runs` is how many PSI calls are aggregated into that one report. The default is **10**. The maximum is 40. Fewer runs finish sooner and are only a rough look. Ten is what you compare against a target, because one Lighthouse score moves by several points on a page that did not change.
 
@@ -89,43 +157,43 @@ A default mobile run, 10 PSI runs, looks like this:
 
 ```
 PSI - API
-mobile · 10 runs · https://qwik-guvi-perf-fix.codingpuppet.com/zen-class/
+mobile · 10 runs · https://www.guvi.in/zen-class/
 
- 1. 95%     6. 95%
- 2. 95%     7. 95%
- 3. 95%     8. 95%
- 4. 95%     9. 95%
- 5. 95%    10. 95%
+ 1. 92%     2. 91%     3. 93%     4. 92%     5. 95%
+ 6. 92%     7. 91%     8. 92%     9. 93%    10. 92%
 
-https://qwik-guvi-perf-fix.codingpuppet.com/zen-class/
-mobile · Lighthouse 13.5.0 · median of 10/10 runs · 2026-09-30
-measured under moto g power (2022) · CPU index 843 (higher = slower) · en-US · performance only
+https://www.guvi.in/zen-class/
+mobile · Lighthouse 13.6.0 · median of 10/10 runs · 2026-11-26
+measured under moto g power (2022) · CPU index 828 (higher = slower) · en-US · performance only
 
-SCORE    95 / 100  target 90   range 94–95
+SCORE    92 / 100  target 90   range 91–95
 
-VERDICT  PASS  2 of 6 targets failing
-        FCP 1991ms vs 1800ms (0/10 runs in target), SI 3427ms vs 3400ms (4/10 runs in target)
+VERDICT  PASS  1 of 6 targets failing
+        LCP 3301ms vs 2500ms (0/10 runs in target)
 
   METRIC       MEDIAN  TARGET  VERDICT      % OF TARGET                    RUNS IN TARGET
-  FCP          1991ms  1800ms  +191ms over         111%  ████████×·······            0/10
-  LCP          2476ms  2500ms  in target            99%  ████████┃·······            9/10
-  Speed index  3427ms  3400ms  +27ms over          101%  ████████×·······            4/10
-  TBT             8ms   200ms  in target             4%  ········┃·······           10/10
-  CLS           0.000   0.100  in target             0%  ········┃·······           10/10
+  FCP          1351ms  1800ms  in target            75%  ██████··┃·······           10/10
+  LCP          3301ms  2500ms  +801ms over         132%  ██████████×·····            0/10
+  Speed index  2106ms  3400ms  in target            62%  █████···┃·······           10/10
+  TBT            21ms   200ms  in target            11%  █·······┃·······           10/10
+  CLS           0.004   0.100  in target             3%  ········┃·······           10/10
 
 FINDINGS  32 shown
   EST. SAVING  INSIGHT                          AFFECTS  OURS   SEEN
-        559ms  render-blocking-insight          LCP FCP  100%  10/10
-        225ms  image-delivery-insight           LCP FCP     —  10/10
-        150ms  cache-insight                    LCP FCP    0%  10/10
-            —  bootup-time                      TBT      100%  10/10
-         84KB  unused-javascript                LCP FCP  100%  10/10
+        250ms  render-blocking-insight          LCP FCP  100%  10/10
+        150ms  unused-css-rules                 LCP FCP  100%  10/10
+         50ms  bootup-time                      TBT      100%  10/10
+         50ms  long-tasks                       TBT      100%  10/10
+         50ms  mainthread-work-breakdown        TBT         —  10/10
+        115KB  unused-javascript                LCP FCP  100%  10/10
+         10KB  legacy-javascript-insight        LCP FCP    0%  10/10
+            —  cls-culprits-insight             CLS         —  10/10
   ...
 
   — in SAVING means Lighthouse gave no estimate, which is not zero.
   OURS is how much of the cost your own code is responsible for.
 
-saved as reportId 2026-09-30T08-04-23Z-mobile
+saved as reportId 2026-11-26T12-19-33Z-mobile
 ```
 
 Every part of this is explained in [Reading the output](#reading-the-output). Filters, a ranked work queue, and re-reading a report you already paid for are in [CLI](#cli).
@@ -151,6 +219,8 @@ npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
 | `--strategy <mobile\|desktop>` | `mobile` | Same choice as `--mobile` / `--desktop`. |
 | `--reportId <id>` | — | Re-filter a **stored** report. Costs no quota and runs no PSI calls. |
 | `--reanalyze` | off | Rebuild stored report(s) from their own retained runs with today's rules. Costs no quota. Combine with `--reportId`, or omit it to sweep everything in `data/`. |
+| `--list` | off | List stored reports, newest first. Costs no quota. See [Listing and comparing reports](#listing-and-comparing-reports). |
+| `--compare <before> <after>` | — | `KEEP`, `REVERT` or `INCONCLUSIVE` for `--metric` (default: the baseline's worst failing metric), plus what changed in the requests. Costs no quota. |
 | `--stat <mean\|median\|mode>` | `median` | Headline statistic. |
 | `--group <list>` | — | `opportunity,diagnostic,passed,informative`. |
 | `--minSavingsMs <n>` | — | |
@@ -312,7 +382,7 @@ Every report carries `fieldData`, passed through from PSI untouched. It is the o
 
 `loadingExperience` is keyed on the exact measured URL, `originLoadingExperience` on the whole origin. **`{}` or `null` means insufficient traffic, not a bug** — CrUX needs a threshold of real sessions, so a staging host is essentially always empty. On staging, judge on the lab numbers and say so rather than reading the absence as a finding. The cache-busting [nonce](#the-cache-busting-param-never-appears-in-output) is stripped here too, so `initial_url` never carries `?psi_nonce=`.
 
-It appears in `--json` and over HTTP, is not rendered in the text output, and is not part of `--diagnose`.
+It appears in `--json`, over HTTP, and in the web UI's **Real users** panel, which shows the p75 of FCP, LCP, INP, CLS and TTFB against their [targets](#targets). It is not rendered in the CLI's text output and is not part of `--diagnose`.
 
 ### `runs.json`: per-run detail
 
@@ -338,9 +408,43 @@ node -e 'require(process.argv[1]).forEach(r =>
 
 Reading it is free and read-only. Do not edit it: `--reanalyze` rebuilds from it, and it is never rewritten, so a rebuild can always be redone.
 
-### Finding a stored report
+### Listing and comparing reports
 
-Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `npm run psi -- --list` lists every stored report, newest first, at no quota cost (add `--json` for a machine-readable list), and the server's `GET /reports` returns the same list. The directories are a plain index too:
+Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `--list` prints every stored report, newest first, at no quota cost (add `--json` for a machine-readable list); the server's `GET /reports` returns the same list, and the web UI's sidebar shows it.
+
+```
+$ npm run psi -- --list
+
+REPORTS  20 stored, newest first
+  2026-11-26T13-05-25Z-mobile  mobile  score 95.1  lcp 2836ms  https://www.guvi.in/
+  2026-11-26T12-19-33Z-mobile  mobile  score 92  lcp 3301ms  https://www.guvi.in/zen-class/
+  2026-11-26T11-10-18Z-mobile  mobile  score 93  lcp 3151ms  https://www.guvi.in/zen-class/
+  2026-11-26T11-09-24Z-desktop  desktop  score 99  lcp 711ms  https://www.guvi.in/zen-class/
+  ...
+```
+
+`--compare <before> <after>` says whether a change helped, judged on one metric's runs rather than the score: `KEEP`, `REVERT` or `INCONCLUSIVE`, with the reason, then what changed in the requests (document size, 404s, third parties). `--metric` picks the metric; without it, the baseline's worst failing metric is used. It costs no quota.
+
+```
+$ npm run psi -- --compare 2026-11-26T11-10-18Z-mobile 2026-11-26T12-19-33Z-mobile
+
+COMPARE  lcp
+  before 2026-11-26T11-10-18Z-mobile  range 2701ms–4051ms  pass 0%
+  after  2026-11-26T12-19-33Z-mobile  range 2926ms–3376ms  pass 0%
+
+VERDICT  INCONCLUSIVE
+  lcp splits into two groups, so its range is not a noise band. Compare lane to lane before keeping
+  a change.
+
+REQUESTS
+  document 85KB → 85KB
+  404s resolved: none
+  404s introduced: none
+  third parties arrived: none
+  third parties left: none
+```
+
+Compare two reports of the same page and device, taken with the same number of runs. The directories are a plain index too:
 
 ```bash
 ls -1t data/<host>/                                    # newest first
@@ -392,6 +496,35 @@ npm run psi -- --seoList --json                            # { "checks": [...] }
 
 `--seo` honours `--desktop`, `--mobile`, `--strategy`, `--no-save` and `--json`, and saves by default. `--seoId` and `--seoList` read from `data/` and take `--json`. The three modes can't be combined with each other, or with `--reportId`, `--list`, `--compare`, `--reanalyze`, `--diagnose`, `--requests`, `--items` or the insight filters.
 
+A check of a page where everything passes:
+
+```
+SEO  https://www.guvi.in/zen-class/
+mobile · Lighthouse 13.6.0 · 2026-11-26 12:23 UTC · 2026-11-26T12-23-19Z-mobile-seo
+
+SCORE    100 / 100   10 passed · 0 failed · 1 to check manually · 0 not applicable
+
+ADDITIONAL ITEMS TO MANUALLY CHECK  1
+  ? structured-data    Structured data is valid
+
+PASSED AUDITS  10
+  ✓ is-crawlable       Page isn’t blocked from indexing
+  ✓ document-title     Document has a `<title>` element
+  ✓ meta-description   Document has a meta description
+  ✓ http-status-code   Page has successful HTTP status code
+  ✓ link-text          Links have descriptive text
+  ✓ crawlable-anchors  Links are crawlable
+  ✓ robots-txt         robots.txt is valid
+  ✓ image-alt          Image elements have `[alt]` attributes
+  ✓ hreflang           Document has a valid `hreflang`
+  ✓ canonical          Document has a valid `rel=canonical`
+
+saved as seoId 2026-11-26T12-23-19Z-mobile-seo in data/www.guvi.in/seo/2026-11-26T12-23-19Z-mobile-seo.json
+--seoId 2026-11-26T12-23-19Z-mobile-seo re-reads it for free (no PSI call)
+```
+
+A failed audit is marked `✗` under its group, with its detail rows (the offending links, elements or lines) indented beneath it. An audit Lighthouse could not run is marked `!` with its error.
+
 The text view starts with a header (page, device, Lighthouse version, when it was measured) and a SCORE line, 0–100, with the counts of failed, passed, manual and not-applicable audits. The sections follow in the order the PSI website uses:
 
 1. Audits that could not run, if any.
@@ -404,7 +537,7 @@ The text view starts with a header (page, device, Lighthouse version, when it wa
 
 A check is saved as `data/<host>/seo/<seoId>.json`. `<seoId>` is `<ISO timestamp>-<strategy>-seo`, for example `2026-11-26T10-00-00Z-mobile-seo`. It is kept apart from performance reports, so it never appears among them.
 
-This is the SEO category only. It is not Accessibility or Best Practices.
+This is the SEO category only. It is not Accessibility or Best Practices. The web UI's **SEO** tab shows the same check, and [`POST /seo`](#post-seo) runs it over HTTP.
 
 ---
 
@@ -779,12 +912,13 @@ The public `guvi-guvi` SOP sets the real bar: **Lighthouse 90+ minimum, 95+ best
 
 ---
 
-## Additional: HTTP server
+## HTTP server and API
 
-You do not need this to measure a page. The commands in [Measure a page](#measure-a-page) run the same checks in the terminal. Start the server only when another program should call the JSON API.
+The server hosts the [web UI](#web-ui) at `/` and a JSON API for other programs. You do not need it to measure a page in the terminal.
 
 ```bash
-npm run dev    # http://127.0.0.1:3939
+npm run ui     # build the UI, then serve the UI and the API at http://127.0.0.1:3939
+npm run dev    # serve the API (and the last built UI), restarting on code changes
 ```
 
 All responses are JSON. Errors are always `{ "error": { "code", "message" } }` with a matching status code.
@@ -800,7 +934,8 @@ Runs PSI and returns the aggregated report. **This costs `runs` quota units and 
 | `runs` | `10` | 1–40. |
 | `stat` | `median` | `mean`, `median` or `mode`. Headline statistic. |
 | `force` | `false` | Skip the 10-minute cache. |
-| `async` | `false` | Return `{ jobId }` immediately instead of waiting. |
+| `async` | `false` | Return `{ jobId }` immediately instead of waiting. See [`GET /jobs/:jobId`](#get-jobsjobid). |
+| `save` | `true` | `false` does not write the report to `data/`, like `--no-save`. |
 
 ```bash
 # single fast check
@@ -955,6 +1090,42 @@ Lists saved SEO checks, newest first, as `{ "checks": [...] }`. Each entry has `
 curl "http://127.0.0.1:3939/seo?url=https://example.com&strategy=mobile"
 ```
 
+### `GET /jobs/:jobId`
+
+The state of an `async=true` report: `queued`, `running`, `done` or `failed`. While it runs, `progress` has one entry per finished PSI attempt (`run`, `ok`, `score`, or `error`, and `cached` for a repeated analysis that is retried), which is what the web UI draws live. When it is `done`, `result` is the report; when it is `failed`, `error` says why. Jobs are kept in memory, so a restart forgets them.
+
+```bash
+curl http://127.0.0.1:3939/jobs/job_m1a2b3_7
+# {"id":"job_m1a2b3_7","status":"running","progress":[{"run":1,"ok":true,"score":92}],"save":true, ...}
+```
+
+### `GET /reports`
+
+Every stored report, newest first, as `{ "reports": [...] }`: the CLI's `--list`. Each entry has `reportId`, `host`, `url`, `strategy`, `stat`, `generatedAt`, `runsRequested`, `runsSucceeded`, `score`, `lcp`, `meetsTarget`, `targetsFailing` and `targetsTotal`. No quota cost. SEO checks are never listed here.
+
+```bash
+curl http://127.0.0.1:3939/reports
+```
+
+### `POST /reanalyze`
+
+The CLI's `--reanalyze`: rebuilds stored reports from their own `runs.json` with today's rules. No quota cost. Send `{ "reportId": "..." }` for one report or omit it for all, and `"save": false` to preview without writing. The answer is `{ "reanalyzed": [ { "reportId", "delta", "saved" } ] }`, where `delta` lists the recovered costs, corrected zeroes and changed failing metrics. It rewrites files, so it takes only a JSON body (`415` otherwise).
+
+```bash
+curl -X POST http://127.0.0.1:3939/reanalyze \
+  -H 'content-type: application/json' \
+  -d '{"reportId":"2026-11-26T12-19-33Z-mobile","save":false}'
+```
+
+### `GET /targets`
+
+The contents of `config/targets.json`: the lab targets per device and the real-user `field` targets. Read-only.
+
+```bash
+curl http://127.0.0.1:3939/targets
+# {"mobile":{"score":90,"lcp":2500,...},"desktop":{...},"field":{"inp":200,"ttfb":900}}
+```
+
 ### `GET /health`
 
 ```bash
@@ -967,13 +1138,26 @@ curl http://127.0.0.1:3939/health
 ## Development
 
 ```bash
-npm test          # unit tests, no network
-npm run typecheck # tsc over src and tests
-npm run dev       # watch mode
-npm run build     # emit dist/
+npm test                # unit tests, no network
+npm run typecheck       # tsc over src and tests
+npm run dev             # API server in watch mode
+npm run build           # emit dist/
+
+npm run ui              # build the web UI, then serve it with the API
+npm run web:dev         # web UI dev server with hot reload, on :5190
+npm run web:build       # build the web UI into web/out
+npm run web:typecheck   # tsc over the web UI
 ```
 
-Tests use a saved PSI fixture in `tests/fixtures/` and a mocked `fetch`; **no test touches the network.** Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
+The code is in three places:
+
+| Folder | What |
+| --- | --- |
+| `src/` | The CLI (`cli.ts`), the server (`server.ts`) and everything they share: PSI calls, aggregation, targets, rendering, storage, the SEO check. |
+| `web/` | The Next.js web UI. `web/src/` holds its views and the small helpers that turn API answers into what the page shows; it imports the CLI's own formatting from `src/` rather than redoing it. |
+| `tests/` | Vitest tests for both, including tests that the page and the CLI agree. |
+
+Tests use saved PSI fixtures in `tests/fixtures/` (performance and SEO) and a mocked `fetch`; **no test touches the network.** Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
 
 To regenerate the fixture: `node scripts/make-fixture.js`.
 
