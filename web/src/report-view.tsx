@@ -251,7 +251,7 @@ function SummaryBlock({ report }: { report: AggregatedReport }) {
         <p className="summary-label">Verdict</p>
         <p
           className={`verdict-word text-${verdict.word === 'PASS' ? 'good' : 'bad'}`}
-          title="FAIL means more than half the targets fail. A target fails when fewer than 90% of runs hold it."
+          title="FAIL means the score misses its target, or more than half the targets fail. A target fails when fewer than 90% of runs hold it."
         >
           {verdict.word}
         </p>

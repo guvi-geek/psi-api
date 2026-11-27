@@ -40,7 +40,9 @@ describe('verdictSummary', () => {
     const failing = r.targets.gaps.filter((gap) => !gap.meets);
     expect(verdict.failing).toBe(failing.length);
     expect(verdict.total).toBe(r.targets.gaps.length);
-    expect(verdict.word).toBe(failing.length > r.targets.gaps.length / 2 ? 'FAIL' : 'PASS');
+    // The score misses its target here, so the word is FAIL whatever the count.
+    expect(failing.some((gap) => gap.metric === 'score')).toBe(true);
+    expect(verdict.word).toBe('FAIL');
     // LCP misses by ~20% of budget, the score by ~10%: LCP is named first.
     expect(verdict.named[0]!.metric).toBe('lcp');
     expect(verdict.named[0]!.text).toMatch(/^LCP \d+ms vs 2500ms \(0\/10 runs in target\)$/);

@@ -219,10 +219,3 @@ export function formatWhen(iso: string, now = Date.now()): string {
   return new Date(then).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-/**
- * The CLI's verdict word: FAIL only when more than half the targets fail, so
- * "2 of 6 failing" is a mostly healthy page that still has work to do.
- */
-export function verdictOf(report: Pick<ReportRow, 'targetsFailing' | 'targetsTotal'>): 'PASS' | 'FAIL' {
-  return report.targetsFailing > report.targetsTotal / 2 ? 'FAIL' : 'PASS';
-}

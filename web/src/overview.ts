@@ -5,6 +5,7 @@
  * src/readout.ts and src/rows.ts, so the page and the terminal cannot disagree
  * on a value, a bar, a run count or a verdict. No React here: tests import it.
  */
+import { verdictWord } from '../../src/verdict';
 import type { AggregatedReport, Gap, MetricKey, NetworkRequest, SeriesStats } from '../../src/types';
 import {
   medianOverTarget,
@@ -101,7 +102,7 @@ export function verdictSummary(report: Report, limit = 4): VerdictSummary {
     });
   return {
     // "3 of 6" is exactly half, which is not a FAIL.
-    word: failing.length > gaps.length / 2 ? 'FAIL' : 'PASS',
+    word: verdictWord(gaps),
     failing: failing.length,
     total: gaps.length,
     named,

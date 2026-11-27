@@ -5,6 +5,7 @@ import { runReport, MAX_RUNS, InsufficientRunsError } from './runner.js';
 import { filterInsights } from './insights.js';
 import { diagnose as diagnoseReport, METRIC_LABELS } from './diagnose.js';
 import { loadTargets } from './targets.js';
+import { verdictWord } from './verdict.js';
 import { loadCategories, loadReport, loadRuns, listReports, getDataDir, saveReport } from './storage.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { compareReports, defaultCompareMetric, type CompareResult } from './compare.js';
@@ -780,10 +781,8 @@ function verdict(report: AggregatedReport, useColor: boolean): string[] {
   const failing = gaps.filter((gap) => !gap.meets);
   const lines: string[] = [];
 
-  // 'FAIL' only when more than half of budgets are failing.
-  // "3 of 6" is exactly half, not a fail.
-  const majority = failing.length > gaps.length / 2;
-  const state = majority ? paint('red', 'FAIL', useColor) : paint('green', 'PASS', useColor);
+  // FAIL when the score misses its target, or more than half the targets fail.
+  const state = verdictWord(gaps) === 'FAIL' ? paint('red', 'FAIL', useColor) : paint('green', 'PASS', useColor);
   const scope = `${failing.length} of ${gaps.length} target${gaps.length === 1 ? '' : 's'} failing`;
   lines.push(`${paint('bold', 'VERDICT', useColor)}  ${state}  ${paint('dim', scope, useColor)}`);
 

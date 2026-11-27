@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { compareToTargets, loadTargets } from '../src/targets.js';
+import { verdictWord } from '../src/verdict.js';
 import type { AggregatedReport, Strategy, Targets } from '../src/types.js';
 
 const targets: Targets = {
@@ -121,5 +122,25 @@ describe('compareToTargets', () => {
       fakeReport({ score: 99, metrics: { lcp: 2000, tbt: 100, cls: 0.05, fcp: 1500, speedIndex: 3000 } }),
     );
     expect(result.meetsTarget).toBe(true);
+  });
+});
+
+describe('verdictWord', () => {
+  const gaps = (failing: string[]) =>
+    ['score', 'lcp', 'tbt', 'cls', 'fcp', 'speedIndex'].map((metric) => ({ metric, meets: !failing.includes(metric) }));
+
+  it('fails whenever the score target fails, however few targets fail', () => {
+    expect(verdictWord(gaps(['score']))).toBe('FAIL');
+    expect(verdictWord(gaps(['score', 'lcp']))).toBe('FAIL');
+    // The review's case: score 55 against 90, 3 of 6 failing, was a green PASS.
+    expect(verdictWord(gaps(['score', 'lcp', 'tbt']))).toBe('FAIL');
+  });
+
+  it('with the score in target, fails only when more than half fail', () => {
+    expect(verdictWord(gaps([]))).toBe('PASS');
+    expect(verdictWord(gaps(['lcp', 'fcp']))).toBe('PASS');
+    expect(verdictWord(gaps(['lcp', 'fcp', 'tbt']))).toBe('PASS');
+    expect(verdictWord(gaps(['lcp', 'fcp', 'tbt', 'cls']))).toBe('FAIL');
+    expect(verdictWord([])).toBe('PASS');
   });
 });

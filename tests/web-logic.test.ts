@@ -15,7 +15,6 @@ import {
   pathOf,
   scoreBand,
   slotsFor,
-  verdictOf,
   type ReportRow,
 } from '../web/src/run.js';
 
@@ -185,12 +184,6 @@ describe('report row text', () => {
     expect(formatWhen('2026-11-26T09:00:00Z', now)).toBe('3 h ago');
     expect(formatWhen('2026-11-20T09:00:00Z', now)).toMatch(/2026/);
     expect(formatWhen('not a date', now)).toBe('');
-  });
-
-  it('uses the CLI verdict: FAIL only when more than half the targets fail', () => {
-    expect(verdictOf({ targetsFailing: 2, targetsTotal: 6 })).toBe('PASS');
-    expect(verdictOf({ targetsFailing: 3, targetsTotal: 6 })).toBe('PASS');
-    expect(verdictOf({ targetsFailing: 4, targetsTotal: 6 })).toBe('FAIL');
   });
 });
 
