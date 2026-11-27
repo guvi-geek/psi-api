@@ -72,8 +72,9 @@ export function SeoView({ report, params }: { report: AggregatedReport; params: 
         <h2 className="panel-title seo-flush">No SEO and more for this report</h2>
         <p className="muted seo-flush">
           It was measured before every run read accessibility, best practices, SEO and agentic browsing alongside
-          performance. Re-analyze, at the top right, measures the page again with the same settings; the new report has
-          them, at no extra PSI calls.
+          performance. Measure again, at the top right, measures the page again with the same settings: it spends{' '}
+          {report.runsRequested} PSI call{report.runsRequested === 1 ? '' : 's'}, and the new report has these categories with no
+          extra calls on top.
         </p>
         {loaded.state === 'failed' && <p className="note-warn seo-flush">Could not read them: {loaded.error.message}</p>}
       </div>

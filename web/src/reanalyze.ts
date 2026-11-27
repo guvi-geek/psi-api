@@ -1,6 +1,7 @@
 /**
- * Re-analyze on a report measures the page again with that report's own
- * settings, saved as a new report. Spends `runs` PSI calls.
+ * Measure again, on a report: the page again with that report's own settings,
+ * saved as a new report. Spends `runs` PSI calls. (Not the free rebuild that
+ * --reanalyze and POST /reanalyze do from stored runs.)
  */
 export function rerunRequest(report: {
   url: string;

@@ -1097,7 +1097,10 @@ a:hover {
   color: var(--warn);
 }
 
+/* position: relative keeps absolutely placed things inside (such as a visually hidden
+   header label), so they scroll with the table instead of widening the page. */
 .table-scroll {
+  position: relative;
   overflow-x: auto;
 }
 .metrics-table th[scope='row'] {

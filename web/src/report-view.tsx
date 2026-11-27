@@ -143,7 +143,7 @@ function ReportHeader({ report }: { report: AggregatedReport }) {
             disabled={starting}
             title={`Measure this page again: ${request.strategy}, ${request.runs} runs, ${request.stat}. Uses ${request.runs} PSI call${request.runs === 1 ? '' : 's'} from your quota and saves a new report.`}
           >
-            {starting ? 'Starting' : 'Re-analyze'}
+            {starting ? 'Starting' : 'Measure again'}
           </button>
         </div>
       </div>

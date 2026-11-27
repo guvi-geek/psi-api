@@ -132,7 +132,7 @@ The UI keeps its reports in **MongoDB** (`MONGODB_URI`), so the whole team share
 - **Sidebar.** Saved reports, grouped by host, newest first, with a filter. Opening one costs no quota.
 - **Home page.** The targets every report is graded against, including the [real-user targets](#targets) for INP and TTFB.
 - **A report** has four tabs:
-  - **Overview:** score, verdict and failing targets in one panel; every metric against its target with a bar and runs in target; real-user (CrUX) p75 values in the same order; how it was measured; every statistic side by side. **Re-analyze** measures the page again with the report's own settings, as a new report.
+  - **Overview:** score, verdict and failing targets in one panel; every metric against its target with a bar and runs in target; real-user (CrUX) p75 values in the same order; how it was measured; every statistic side by side. **Measure again** measures the page again with the report's own settings, as a new report, and spends one PSI call per run. (The free rebuild from stored runs is `--reanalyze` and [`POST /reanalyze`](#post-reanalyze).)
   - **Findings:** every Lighthouse finding with search, whose cost it is (anyone, ours, third party), hide flaky, and sort. Selecting one opens a drawer with its description, facts, per-run stats and rows, as `--items` prints them.
   - **Requests:** every request the median run made, summarised per type ("40 Images - 683KB"), filtered by party, request type, order and count.
   - **SEO and more:** accessibility, best practices, SEO and agentic browsing, read in the same PSI calls as the report, as four scores. Choosing one shows its audits: failed ones first with their details, then manual checks, passed and not applicable. No extra PSI call.
