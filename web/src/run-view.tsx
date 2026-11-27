@@ -13,7 +13,7 @@ const ERROR_HELP: Record<string, string> = {
   INVALID_URL: 'PSI can only measure a public http or https page.',
 };
 
-/** One measurement as it happens: polls the job until it ends, then says what to do next. */
+/** One measurement as it happens: polls the job until it ends, then opens the saved report. */
 export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [lost, setLost] = useState<ApiError | null>(null);
@@ -41,6 +41,11 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
           if (!finishedRef.current) {
             finishedRef.current = true;
             onFinished();
+          }
+          // A saved report opens by itself. Replacing this page in the history means Back
+          // goes to where the run was started, not to a finished run that would open it again.
+          if (next.status === 'done' && next.save !== false && next.result) {
+            location.replace(href.report(next.result.reportId));
           }
           return;
         }
@@ -115,7 +120,7 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
       </p>
       {trouble && running && <p className="form-error">Lost contact with the server: {trouble} Retrying.</p>}
 
-      {job.status === 'done' && job.result && <RunResult job={job} />}
+      {job.status === 'done' && job.result && job.save === false && <UnsavedResult job={job} />}
       {job.status === 'failed' && <RunFailure job={job} />}
     </section>
   );
@@ -146,7 +151,8 @@ function RunSlot({ slot }: { slot: Slot }) {
   );
 }
 
-function RunResult({ job }: { job: Job }) {
+/** A run measured with saving off: there is no report to open, so its result is shown here. */
+function UnsavedResult({ job }: { job: Job }) {
   const result = job.result!;
   const gaps = result.targets?.gaps ?? [];
   const failing = gaps.filter((gap) => !gap.meets).length;
@@ -162,13 +168,7 @@ function RunResult({ job }: { job: Job }) {
           {result.runsSucceeded} of {result.runsRequested} runs succeeded.{' '}
           {gaps.length > 0 && `${failing} of ${gaps.length} targets failing.`}
         </p>
-        {job.save === false ? (
-          <p className="muted">Not saved. This result is gone when the server restarts.</p>
-        ) : (
-          <a className="button button-primary" href={href.report(result.reportId)}>
-            Open report
-          </a>
-        )}
+        <p className="muted">Not saved, so there is no report to open. This result is gone when the server restarts.</p>
       </div>
     </div>
   );
