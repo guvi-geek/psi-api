@@ -78,70 +78,81 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
 
   return (
     <div className="stack">
-      <div className="panel">
-        <p className="request-totals">
-          <strong>
-            {totals.count} request{totals.count === 1 ? '' : 's'} - {totals.bytes}
-          </strong>{' '}
-          transferred. {totals.first.count} first-party - {totals.first.bytes}, {totals.third.count} third-party -{' '}
-          {totals.third.bytes}
-          {totals.notFound > 0 && <span className="text-bad">, {totals.notFound} returned 404 Not Found</span>}.
-        </p>
-      </div>
+      {/* One panel: what the run requested, then how to narrow the table. */}
+      <div className="panel requests-head">
+        <ul className="request-stats">
+          <li>
+            <strong>{totals.count}</strong> request{totals.count === 1 ? '' : 's'} · <strong>{totals.bytes}</strong> transferred
+          </li>
+          <li>
+            <strong>{totals.first.count}</strong> first-party · {totals.first.bytes}
+          </li>
+          <li>
+            <strong>{totals.third.count}</strong> third-party · {totals.third.bytes}
+          </li>
+          {totals.notFound > 0 && (
+            <li className="text-bad">
+              <strong>{totals.notFound}</strong> returned 404 Not Found
+            </li>
+          )}
+        </ul>
 
-      <div className="filter-bar panel">
-        <div className="filter-row">
-          <div className="segmented" role="radiogroup" aria-label="Whose requests">
-            {(
-              [
-                ['any', 'Anyone'],
-                ['first', 'Ours'],
-                ['third', 'Third party'],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className={`segment${filters.party === value ? ' is-on' : ''}`}>
-                <input type="radio" name={`${ids}-party`} checked={filters.party === value} onChange={() => update({ party: value })} />
-                {label}
-              </label>
-            ))}
+        <div className="request-filters">
+          <div className="request-filter-row">
+            <span className="filter-label request-filter-label">Whose</span>
+            <div className="segmented" role="radiogroup" aria-label="Whose requests">
+              {(
+                [
+                  ['any', 'Anyone'],
+                  ['first', 'Ours'],
+                  ['third', 'Third party'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className={`segment${filters.party === value ? ' is-on' : ''}`}>
+                  <input type="radio" name={`${ids}-party`} checked={filters.party === value} onChange={() => update({ party: value })} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            <span className="filter-label request-filter-label request-order-label">Order</span>
+            <div className="segmented" role="radiogroup" aria-label="Order">
+              {(
+                [
+                  ['start', 'In start order'],
+                  ['size', 'Largest first'],
+                ] as const
+              ).map(([value, label]) => (
+                <label key={value} className={`segment${filters.sortBy === value ? ' is-on' : ''}`}>
+                  <input type="radio" name={`${ids}-order`} checked={filters.sortBy === value} onChange={() => update({ sortBy: value })} />
+                  {label}
+                </label>
+              ))}
+            </div>
           </div>
-          <div className="segmented" role="radiogroup" aria-label="Order">
-            {(
-              [
-                ['start', 'In start order'],
-                ['size', 'Largest first'],
-              ] as const
-            ).map(([value, label]) => (
-              <label key={value} className={`segment${filters.sortBy === value ? ' is-on' : ''}`}>
-                <input type="radio" name={`${ids}-order`} checked={filters.sortBy === value} onChange={() => update({ sortBy: value })} />
-                {label}
-              </label>
-            ))}
-          </div>
-        </div>
 
-        {/* Types in the report, biggest first. A click shows only that type, or adds it with "Select several". */}
-        <div className="filter-row">
-          <div className="chip-group" role="group" aria-label="Request type">
-            <span className="filter-label">Type</span>
-            <button type="button" className="chip" aria-pressed={!filters.types?.length} onClick={() => update({ types: undefined })}>
-              All
-            </button>
-            {totals.byType.map((entry) => (
-              <button
-                key={entry.type}
-                type="button"
-                className="chip"
-                aria-pressed={Boolean(filters.types?.includes(entry.type))}
-                onClick={() => toggleType(entry.type)}
-              >
-                {entry.label} <span className="chip-count">- {entry.bytes}</span>
+          {/* Types in the report, biggest first. A click shows only that type, or adds it with "Select several". */}
+          <div className="request-filter-row">
+            <span className="filter-label request-filter-label">Type</span>
+            <div className="chip-group" role="group" aria-label="Request type">
+              <button type="button" className="chip" aria-pressed={!filters.types?.length} onClick={() => update({ types: undefined })}>
+                All
               </button>
-            ))}
-            <label className="check check-inline type-several">
-              <input type="checkbox" checked={several} onChange={(event) => chooseSeveral(event.target.checked)} />
-              <span>Select several</span>
-            </label>
+              {totals.byType.map((entry) => (
+                <button
+                  key={entry.type}
+                  type="button"
+                  className="chip"
+                  aria-pressed={Boolean(filters.types?.includes(entry.type))}
+                  onClick={() => toggleType(entry.type)}
+                >
+                  {entry.label} <span className="chip-count">- {entry.bytes}</span>
+                </button>
+              ))}
+              <label className="check check-inline type-several">
+                <input type="checkbox" checked={several} onChange={(event) => chooseSeveral(event.target.checked)} />
+                <span>Select several</span>
+              </label>
+            </div>
           </div>
         </div>
       </div>

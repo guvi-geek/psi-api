@@ -1505,8 +1505,69 @@ a.tab:hover {
   cursor: default;
 }
 
-.request-totals {
+/* Requests head: the run's numbers, a hairline, then the filters with their labels lined up. */
+.requests-head {
+  display: grid;
+  gap: 14px;
+}
+.request-stats {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 0;
   margin: 0;
+  padding: 0;
+  font-size: 14px;
+  color: var(--muted);
+}
+.request-stats li {
+  padding: 0 16px;
+}
+.request-stats li:first-child {
+  padding-left: 0;
+}
+.request-stats li + li {
+  border-left: 1px solid var(--line);
+}
+.request-stats strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.request-stats .text-bad strong {
+  color: inherit;
+}
+.request-filters {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line-strong);
+}
+.request-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+/* A row of wrapping chips keeps its label beside the first line of chips. */
+.request-filter-row:has(.chip-group) {
+  align-items: flex-start;
+}
+.request-filter-row:has(.chip-group) .request-filter-label {
+  line-height: 28px;
+}
+.request-filter-row .chip-group {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* The same width for every row's label, so the controls start in one column. */
+.request-filter-label {
+  width: 48px;
+  flex: 0 0 48px;
+}
+.request-order-label {
+  width: auto;
+  flex: 0 0 auto;
+  margin-left: 12px;
 }
 .requests-table td {
   white-space: nowrap;
@@ -1846,6 +1907,24 @@ a.tab:hover {
 
 /* Phones: everything stacks. */
 @media (max-width: 560px) {
+  /* Requests head: the numbers as a plain list, labels in one column, chips under their label. */
+  .request-stats {
+    flex-direction: column;
+  }
+  .request-stats li,
+  .request-stats li + li {
+    padding: 0;
+    border-left: 0;
+  }
+  .request-order-label {
+    width: 48px;
+    flex: 0 0 48px;
+    margin-left: 0;
+  }
+  .request-filter-row:has(.chip-group) .request-filter-label {
+    flex-basis: 100%;
+    line-height: normal;
+  }
   .summary {
     grid-template-columns: minmax(0, 1fr);
   }
