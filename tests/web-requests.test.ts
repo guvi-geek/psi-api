@@ -9,6 +9,7 @@ import {
   countOfType,
   DEFAULT_REQUESTS,
   pageOf,
+  pickType,
   PAGE_SIZE,
   requestRows,
   requestsFromParams,
@@ -128,5 +129,21 @@ describe('paging the request table', () => {
     expect(pageOf(5, 1)).toEqual({ page: 1, pages: 1, start: 0, end: 5 });
     expect(pageOf(20, 2)).toEqual({ page: 1, pages: 1, start: 0, end: 20 });
     expect(pageOf(0, 3)).toEqual({ page: 1, pages: 1, start: 0, end: 0 });
+  });
+});
+
+describe('the type chips', () => {
+  it('switch to the clicked type, one at a time', () => {
+    expect(pickType(undefined, 'Image', false)).toEqual(['Image']);
+    expect(pickType(['Image'], 'Font', false)).toEqual(['Font']);
+    expect(pickType(['Image', 'Font'], 'Script', false)).toEqual(['Script']);
+    // Clicking the chosen type again shows every type.
+    expect(pickType(['Image'], 'Image', false)).toEqual([]);
+  });
+
+  it('add and remove types when several are allowed', () => {
+    expect(pickType(['Image'], 'Font', true)).toEqual(['Image', 'Font']);
+    expect(pickType(['Image', 'Font'], 'Image', true)).toEqual(['Font']);
+    expect(pickType(undefined, 'Script', true)).toEqual(['Script']);
   });
 });

@@ -156,3 +156,14 @@ export function pageOf(total: number, page: number, size = PAGE_SIZE): { page: n
   const start = total === 0 ? 0 : (current - 1) * size;
   return { page: current, pages, start, end: Math.min(start + size, total) };
 }
+
+/**
+ * The type filter after clicking a type chip. One type at a time switches to it
+ * (clicking the chosen one again shows all); with several allowed, a click adds
+ * or removes that type.
+ */
+export function pickType(current: string[] | undefined, type: string, several: boolean): string[] {
+  const chosen = current ?? [];
+  if (several) return chosen.includes(type) ? chosen.filter((entry) => entry !== type) : [...chosen, type];
+  return chosen.length === 1 && chosen[0] === type ? [] : [type];
+}

@@ -1472,6 +1472,12 @@ a.tab:hover {
   font-size: 12px;
   color: var(--muted);
 }
+/* Turns the type chips from one-at-a-time into add-and-remove. */
+.type-several {
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
 
 /* Under the request table: the rows shown, then previous / next. */
 .pager {

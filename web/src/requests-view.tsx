@@ -5,6 +5,7 @@ import type { AggregatedReport } from '../../src/types';
 import { href } from './router';
 import {
   pageOf,
+  pickType,
   requestRows,
   requestsFromParams,
   requestsToParams,
@@ -18,6 +19,8 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   // Paging replaces a row limit, so an old link's limit is ignored.
   const [filters, setFilters] = useState<RequestFilters>(() => ({ ...requestsFromParams(params), limit: undefined }));
   const [page, setPage] = useState(() => Number(params.get('page') ?? 1));
+  // One type at a time unless "Select several" is ticked; a link that names several ticks it.
+  const [several, setSeveral] = useState(() => (filters.types?.length ?? 0) > 1);
   const ids = useId();
   // Where the pager sat on screen when Previous or Next was pressed, to keep it there.
   const pagerRef = useRef<HTMLElement>(null);
@@ -66,10 +69,12 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   };
   const toggleType = (type: string) => {
     setPage(1);
-    setFilters((current) => ({
-      ...current,
-      types: (current.types ?? []).includes(type) ? (current.types ?? []).filter((entry) => entry !== type) : [...(current.types ?? []), type],
-    }));
+    setFilters((current) => ({ ...current, types: pickType(current.types, type, several) }));
+  };
+  // Back to one type at a time keeps the first one chosen.
+  const chooseSeveral = (on: boolean) => {
+    setSeveral(on);
+    if (!on && (filters.types?.length ?? 0) > 1) update({ types: filters.types!.slice(0, 1) });
   };
 
   return (
@@ -123,7 +128,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
           </div>
         </div>
 
-        {/* Types in the report, biggest first; pick any to show only those. */}
+        {/* Types in the report, biggest first. A click shows only that type, or adds it with "Select several". */}
         <div className="filter-row">
           <div className="chip-group" role="group" aria-label="Request type">
             <span className="filter-label">Type</span>
@@ -141,6 +146,10 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
                 {TYPE_PLURALS[entry.type] ?? `${entry.type}s`} <span className="chip-count">{entry.count}</span>
               </button>
             ))}
+            <label className="check check-inline type-several">
+              <input type="checkbox" checked={several} onChange={(event) => chooseSeveral(event.target.checked)} />
+              <span>Select several</span>
+            </label>
           </div>
         </div>
       </div>
