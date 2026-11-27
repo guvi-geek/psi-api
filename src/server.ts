@@ -383,8 +383,14 @@ const reportsQuery = z.object({
 });
 
 const reanalyzeBody = z.object({
-  /** Omit to rebuild every stored report, like the CLI's bare --reanalyze. */
+  /** One report to rebuild. */
   reportId: z.string().min(1).optional(),
+  /** Without a reportId: rebuild every stored report, a batch at a time. Has to be asked for. */
+  all: boolish.default(false),
+  /** With all: the next batch, after this reportId (the previous answer's next). */
+  before: z.string().min(1).max(100).optional(),
+  /** With all: how many in this batch. */
+  limit: z.coerce.number().int().min(1).max(50).default(50),
   save: boolish.default(true),
 });
 
@@ -591,13 +597,24 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       });
     }
     const body = reanalyzeBody.parse((req.body ?? {}) as object);
-    if (body.reportId && !(await store.loadReport(body.reportId))) {
-      return reply.status(404).send(notFound(body.reportId));
+    if (body.reportId) {
+      if (!(await store.loadReport(body.reportId))) return reply.status(404).send(notFound(body.reportId));
+      return reply.send({ reanalyzed: await reanalyzeStored(store, [body.reportId], body.save) });
     }
-    const ids = body.reportId
-      ? [body.reportId]
-      : (await store.listSummaries()).map((summary) => summary.reportId);
-    return reply.send({ reanalyzed: await reanalyzeStored(store, ids, body.save) });
+    // Rebuilding every stored report rewrites the team's whole history, so it has to be asked
+    // for, and it goes a batch at a time: no single request holds the store for minutes.
+    if (!body.all) {
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_PARAMS',
+          message: 'send a reportId, or "all": true to rebuild every stored report in batches of up to 50',
+        },
+      });
+    }
+    const page = await store.listSummaries({ limit: body.limit + 1, before: body.before });
+    const ids = page.slice(0, body.limit).map((summary) => summary.reportId);
+    const next = page.length > body.limit ? ids[ids.length - 1]! : null;
+    return reply.send({ reanalyzed: await reanalyzeStored(store, ids, body.save), next });
   });
 
   // The budgets every verdict is graded against. Read-only.

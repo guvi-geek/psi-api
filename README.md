@@ -1100,12 +1100,20 @@ curl http://127.0.0.1:3939/reports
 
 ### `POST /reanalyze`
 
-The CLI's `--reanalyze` for the UI's reports: rebuilds them from their own stored runs with today's rules. No quota cost. Send `{ "reportId": "..." }` for one report or omit it for all, and `"save": false` to preview without writing. The answer is `{ "reanalyzed": [ { "reportId", "delta", "saved" } ] }`, where `delta` lists the recovered costs, corrected zeroes and changed failing metrics. It rewrites stored reports (never their runs), so it takes only a JSON body (`415` otherwise).
+The CLI's `--reanalyze` for the UI's reports: rebuilds them from their own stored runs with today's rules. No quota cost. Send `{ "reportId": "..." }` for one report, and `"save": false` to preview without writing. The answer is `{ "reanalyzed": [ { "reportId", "delta", "saved" } ] }`, where `delta` lists the recovered costs, corrected zeroes and changed failing metrics. It rewrites stored reports (never their runs), so it takes only a JSON body (`415` otherwise).
+
+Rebuilding every report rewrites the team's whole history, so it has to be asked for: without a `reportId`, send `"all": true`, or the answer is `400`. It goes newest first, at most 50 reports a request (`"limit"`, 1–50), and the answer adds `next`: send it back as `"before"` for the following batch, until `next` is `null`.
 
 ```bash
 curl -X POST http://127.0.0.1:3939/reanalyze \
   -H 'content-type: application/json' \
   -d '{"reportId":"2026-11-27T04-56-37Z-mobile","save":false}'
+
+# every report, a batch at a time
+curl -X POST http://127.0.0.1:3939/reanalyze -H 'content-type: application/json' -d '{"all":true,"save":false}'
+# -> {"reanalyzed":[...],"next":"2026-11-20T08-15-00Z-mobile-3fa9c1"}
+curl -X POST http://127.0.0.1:3939/reanalyze -H 'content-type: application/json' \
+  -d '{"all":true,"save":false,"before":"2026-11-20T08-15-00Z-mobile-3fa9c1"}'
 ```
 
 ### `GET /targets`

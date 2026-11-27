@@ -117,10 +117,33 @@ describe('POST /reanalyze', () => {
     expect(await readFile(file, 'utf8')).toBe(original);
   });
 
-  it('sweeps every stored report when no id is given, and keeps runs.json', async () => {
+  it('refuses to sweep without an id unless all is asked for, and changes nothing (#5)', async () => {
+    const file = path.join(dir, 'example.com', AFTER_ID, 'report.json');
+    const original = await readFile(file, 'utf8');
+    const response = await app.inject({ method: 'POST', url: '/reanalyze', payload: {} });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.message).toMatch(/send a reportId, or "all": true/);
+    expect(await readFile(file, 'utf8')).toBe(original);
+  });
+
+  it('sweeps in batches with all, each answer giving the next', async () => {
+    const first = (await app.inject({ method: 'POST', url: '/reanalyze', payload: { all: true, limit: 1, save: false } })).json();
+    expect(first.reanalyzed.map((r: { reportId: string }) => r.reportId)).toEqual([AFTER_ID]);
+    expect(first.next).toBe(AFTER_ID);
+    const second = (
+      await app.inject({ method: 'POST', url: '/reanalyze', payload: { all: true, limit: 1, before: first.next, save: false } })
+    ).json();
+    expect(second.reanalyzed.map((r: { reportId: string }) => r.reportId)).toEqual([BEFORE_ID]);
+    expect(second.next).toBeNull();
+    expect((await app.inject({ method: 'POST', url: '/reanalyze', payload: { all: true, limit: 51 } })).statusCode).toBe(400);
+  });
+
+  it('sweeps every stored report with all, and keeps runs.json', async () => {
     const runsFile = path.join(dir, 'example.com', AFTER_ID, 'runs.json');
     const runsBefore = await readFile(runsFile, 'utf8');
-    const { reanalyzed } = (await app.inject({ method: 'POST', url: '/reanalyze', payload: {} })).json();
+    const swept = (await app.inject({ method: 'POST', url: '/reanalyze', payload: { all: true } })).json();
+    const { reanalyzed } = swept;
+    expect(swept.next).toBeNull();
     expect(reanalyzed.map((r: { reportId: string }) => r.reportId).sort()).toEqual([AFTER_ID, BEFORE_ID].sort());
     expect(reanalyzed.every((r: { saved: boolean }) => r.saved)).toBe(true);
     expect(await readFile(runsFile, 'utf8')).toBe(runsBefore);
