@@ -11,6 +11,7 @@ import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets } from '../src/targets.js';
 import { saveReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 import { filterInsights } from '../src/insights.js';
 import { renderInsightRows } from '../src/rows.js';
 import type { AggregatedReport } from '../src/types.js';
@@ -42,7 +43,7 @@ beforeAll(async () => {
   const runs = [0, 1, 2].map((i) => makeReport({ score: 60 + i, fetchTime: `f${i}` }));
   report = applyTargets(aggregateReports(runs, { reportId: REPORT_ID, runsRequested: 3 }));
   await saveReport(report, runs, dir);
-  app = buildServer();
+  app = buildServer({ store: new FileStore() });
   await app.ready();
 });
 

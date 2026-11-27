@@ -1,12 +1,11 @@
 /**
- * The SEO check: one PSI call with `category=seo`, turned into the SEO section
- * of the PageSpeed Insights website (score, failed audits by group, manual
- * checks, passed, not applicable). It is separate from the performance reports:
- * its own PSI call, its own file under data/<host>/seo/ (see seo-storage.ts),
- * and nothing that reads reports ever reads it. No Node-only imports here, so
- * the web UI can use the same formatting.
+ * A PSI category (SEO, accessibility, best practices, agentic browsing) turned
+ * into its section of the PageSpeed Insights website (score, failed audits by
+ * group, manual checks, passed, not applicable). Older versions ran a separate
+ * SEO check and saved it under data/<host>/seo/ (see seo-storage.ts); the CLI
+ * can still read those. No Node-only imports here, so the web UI can use the
+ * same formatting.
  */
-import { runPsiCall, type PsiCallOptions } from './psiClient.js';
 import { stripCacheBust } from './insights.js';
 import type { Strategy } from './types.js';
 
@@ -371,16 +370,4 @@ export function cellText(cell: SeoCell | undefined): string {
     case 'number':
       return String(cell.value);
   }
-}
-
-/* --------------------------------- running -------------------------------- */
-
-export type RunSeoOptions = Omit<PsiCallOptions, 'categories'> & { date?: Date };
-
-/** One PSI call with category=seo. Costs one quota unit. */
-export async function runSeoCheck(options: RunSeoOptions): Promise<SeoCheck> {
-  const { date, ...call } = options;
-  const strategy = call.strategy ?? 'mobile';
-  const result = await runPsiCall({ ...call, strategy, categories: ['seo'] });
-  return normalizeSeo(result.raw, { url: call.url, strategy, seoId: makeSeoId(strategy, date) });
 }

@@ -7,6 +7,7 @@ import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets } from '../src/targets.js';
 import { saveReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 import { makeReport } from './helpers.js';
 
 const REPORT_ID = '2026-09-29T10-30-00Z-mobile';
@@ -28,7 +29,7 @@ beforeAll(async () => {
   const report = applyTargets(aggregateReports(runs, { reportId: REPORT_ID, runsRequested: 3 }));
   await saveReport(report, runs, dir);
 
-  app = buildServer();
+  app = buildServer({ store: new FileStore() });
   await app.ready();
 });
 
@@ -211,5 +212,18 @@ describe('GET /jobs/:jobId', () => {
 describe('beforeEach', () => {
   it('keeps the data dir isolated', () => {
     expect(process.env.PSI_DATA_DIR).toBe(dir);
+  });
+});
+
+describe('the old SEO check routes', () => {
+  it('are gone: SEO comes from GET /report/:reportId/categories now', async () => {
+    for (const [method, url] of [
+      ['POST', '/seo'],
+      ['GET', '/seo'],
+      ['GET', '/seo/2026-11-26T10-00-00Z-mobile-seo'],
+    ] as const) {
+      const response = await app.inject({ method, url, payload: method === 'POST' ? { url: 'https://example.com/' } : undefined });
+      expect(response.statusCode, `${method} ${url}`).toBe(404);
+    }
   });
 });

@@ -9,7 +9,7 @@ npm run psi -- <page>     # measure in the terminal
 npm run ui                # or open the web UI at http://127.0.0.1:3939
 ```
 
-The CLI, the web UI and the HTTP API share the same code and the same `data/` folder, so a report saved by one opens in the others. Reports are kept on disk, so re-reading one later costs no quota.
+The CLI, the web UI and the HTTP API share the same code. The CLI keeps its reports as files in `data/`; the web UI and the API keep theirs in MongoDB, so the team shares one history. Either way, re-reading a stored report later costs no quota.
 
 > This folder is self-contained. It has its own `package.json` and its own git repo, and it does not depend on, or affect, the Qwik app in `../qwik-guvi`.
 
@@ -36,8 +36,9 @@ The CLI, the web UI and the HTTP API share the same code and the same `data/` fo
 ```bash
 cd psi-api
 npm install
-cp .env.example .env    # then paste your key
+cp .env.example .env    # then paste your key, and MONGODB_URI for the web UI
 npm test
+npm run db:indexes      # once per database, before the web UI first uses it
 ```
 
 ### Getting a PSI API key
@@ -62,7 +63,9 @@ Without a key, PSI falls back to a shared anonymous quota that is **frequently a
 | `PSI_API_KEY` | *(unset)* | Google PSI key. Optional but strongly recommended. |
 | `PSI_CONCURRENCY` | `10` | Concurrent PSI calls per report (capped at 10). Quota is per run, not per concurrent call. Use `2` without an API key. |
 | `PSI_FIRST_PARTY_HOSTS` | *(unset)* | Extra domains the measured site owns, comma-separated (`guvi.in,guvi.co`). Without this, a CDN on a sister host is filed as third-party. |
-| `PSI_DATA_DIR` | `./data` | Where reports are written. |
+| `PSI_DATA_DIR` | `./data` | Where the CLI writes reports. |
+| `MONGODB_URI` | *(unset)* | MongoDB for the web UI's reports. **Required by the server**, which does not start without it. The CLI never uses it. Use `127.0.0.1`, not `localhost`, through the cloudflared tunnel. |
+| `PSI_MONGO_DB` | `PSI-API` | The server's database name. Tests use `PSI-API-test`. |
 | `PORT` | `3939` | Port for the [server](#http-server-and-api): the web UI and the API. |
 | `HOST` | `127.0.0.1` | Bind address for the server. |
 | `LOG_LEVEL` | `info` | Pino log level for the server. |
@@ -96,6 +99,7 @@ npm run psi -- https://example.com/ --agentic
 
 # Read what you already measured - free, no PSI calls
 npm run psi -- --list                                  # saved reports, newest first
+npm run psi -- --cleanup                               # delete saved reports more than 3 days old
 npm run psi -- --reportId <reportId>                   # one report again
 npm run psi -- --reportId <reportId> --diagnose        # its ranked work queue
 npm run psi -- --reportId <reportId> --seo             # its SEO (or --accessibility, ...)
@@ -120,7 +124,9 @@ npm run psi -- --reportId <reportId> --seo             # its SEO (or --accessibi
 npm run ui    # builds the UI, then serves it and the API at http://127.0.0.1:3939
 ```
 
-A dark web UI for everything the CLI does. It is a static Next.js export in `web/`, served by the same server as the [HTTP API](#http-server-and-api), so nothing else has to run. It reads and writes the same `data/` folder as the CLI. `PORT` and `HOST` change the address.
+A dark web UI for everything the CLI does. It is a static Next.js export in `web/`, served by the same server as the [HTTP API](#http-server-and-api), so nothing else has to run. `PORT` and `HOST` change the address.
+
+The UI keeps its reports in **MongoDB** (`MONGODB_URI`), so the whole team shares one history. The CLI keeps its own reports as files in `data/`: a report measured in the terminal is not in the UI, and a report measured in the UI is not in `data/`. Before the server first uses a database, create its indexes once with `npm run db:indexes`.
 
 - **Header bar.** Measure a page: address, Mobile or Desktop, number of runs, the headline number (median, mean or most common) and whether to save. Measuring opens a live view where each run lands as PSI returns it. The dot on the right says whether `PSI_API_KEY` is set.
 - **Sidebar.** Saved reports, grouped by host, newest first, with a filter. Opening one costs no quota.
@@ -221,6 +227,7 @@ npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
 | `--reportId <id>` | — | Re-filter a **stored** report. Costs no quota and runs no PSI calls. |
 | `--reanalyze` | off | Rebuild stored report(s) from their own retained runs with today's rules. Costs no quota. Combine with `--reportId`, or omit it to sweep everything in `data/`. |
 | `--list` | off | List stored reports, newest first. Costs no quota. See [Listing and comparing reports](#listing-and-comparing-reports). |
+| `--cleanup` | off | Delete every stored report more than 3 days old. `--dry-run` lists them without deleting. See [Storage](#storage). |
 | `--compare <before> <after>` | — | `KEEP`, `REVERT` or `INCONCLUSIVE` for `--metric` (default: the baseline's worst failing metric), plus what changed in the requests. Costs no quota. |
 | `--stat <mean\|median\|mode>` | `median` | Headline statistic. |
 | `--group <list>` | — | `opportunity,diagnostic,passed,informative`. |
@@ -394,7 +401,7 @@ Every free command reads `report.json`, which is an **aggregate**. The individua
 
 ```
 data/<host>/<reportId>/
-  report.json   # the aggregate - what every CLI flag and endpoint returns
+  report.json   # the aggregate - what every CLI flag reads (the API returns the same JSON from MongoDB)
   runs.json     # one NormalizedReport per successful run
 ```
 
@@ -414,7 +421,7 @@ Reading it is free and read-only. Do not edit it: `--reanalyze` rebuilds from it
 
 ### Listing and comparing reports
 
-Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `--list` prints every stored report, newest first, at no quota cost (add `--json` for a machine-readable list); the server's `GET /reports` returns the same list, and the web UI's sidebar shows it.
+Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `--list` prints every stored report, newest first, at no quota cost (add `--json` for a machine-readable list). The server's `GET /reports` and the web UI's sidebar list the UI's own reports, from MongoDB.
 
 ```
 $ npm run psi -- --list
@@ -542,7 +549,7 @@ npm run psi -- --seoList                                   # saved checks, newes
 npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo     # one of them again
 ```
 
-[`POST /seo`](#post-seo) still runs such a separate check over HTTP, for scripts that use it.
+Only the CLI reads them: the server's old `/seo` routes are gone.
 
 ---
 
@@ -888,13 +895,15 @@ The pass-rate fields are **omitted entirely** when there is no per-run series to
 
 ## Storage
 
-Reports land in `data/<host>/<reportId>/`:
+The CLI and the web UI keep separate reports. The CLI writes files, described here. The UI server writes to MongoDB, in the database `PSI-API` (`PSI_MONGO_DB`): `reports` (one document per report, with the list fields beside it), `runs` (one per run) and `categories` (one per report). Each holds the same JSON text the files hold, so a report reads the same from either. The server only inserts and updates: it never deletes. `npm run db:indexes` creates the unique `reportId` indexes; run it on purpose before first use, because the server never creates an index.
+
+CLI reports land in `data/<host>/<reportId>/`:
 
 ```
 data/
   www.guvi.co/
     2026-09-29T10-30-00Z-mobile/
-      report.json     # the aggregated report (what /report returns)
+      report.json     # the aggregated report (the same JSON the API returns)
       runs.json       # every normalized run, for re-analysis
 ```
 
@@ -912,6 +921,8 @@ data/
 ```
 
 `report.json` is a snapshot of whatever the aggregation rules produced on the day it was written, so improving those rules does nothing for history. `runs.json` keeps the per-run detail — metrics, insights, items, display strings — which is what `--reanalyze` rebuilds from at no quota cost, and what nothing else reads (see [`runs.json`: per-run detail](#runsjson-per-run-detail)). A rebuild **only fills in** a missing savings figure: one that Lighthouse already supplied is never overwritten, because it may have come from a rollup that does not survive normalization and cannot be reconstructed. `runs.json` is never rewritten, so a rebuild can always be redone.
+
+`npm run psi -- --cleanup` deletes every stored report more than 3 days old, by the time in its id: its whole folder, with `report.json`, `runs.json` and `categories.json`. It keeps host folders, `seo/` checks, `optimization-log.md` and any folder whose name is not a report id. Add `--dry-run` to list what would go without deleting, and `--json` for the list as JSON. It only touches files; the UI's MongoDB reports are never deleted.
 
 A host directory may also hold an `optimization-log.md`, the append-only per-host record an optimizing agent maintains — see [AGENT_GUIDE.md](./AGENT_GUIDE.md) Step 10. The tool never creates or reads it.
 
@@ -942,7 +953,7 @@ Runs PSI and returns the aggregated report. **This costs `runs` quota units and 
 | `stat` | `median` | `mean`, `median` or `mode`. Headline statistic. |
 | `force` | `false` | Skip the 10-minute cache. |
 | `async` | `false` | Return `{ jobId }` immediately instead of waiting. See [`GET /jobs/:jobId`](#get-jobsjobid). |
-| `save` | `true` | `false` does not write the report to `data/`, like `--no-save`. |
+| `save` | `true` | `false` does not store the report in MongoDB, like the CLI's `--no-save`. |
 
 ```bash
 # single fast check
@@ -966,7 +977,7 @@ Responses for the same `url` + `strategy` + `runs` + `stat` are cached in memory
 
 ### `GET /report/:reportId`
 
-Re-reads a stored report from disk. No quota cost.
+Re-reads a report the server stored in MongoDB. No quota cost.
 
 ```bash
 curl http://127.0.0.1:3939/report/2026-09-29T10-30-00Z-mobile
@@ -1070,41 +1081,6 @@ curl -X POST http://127.0.0.1:3939/insights \
       }'
 ```
 
-### `POST /seo`
-
-Checks one page's SEO as a separate PSI call with `category=seo`, saved apart from reports. Every report now reads SEO in its own runs ([`GET /report/:reportId/categories`](#get-reportreportidcategories)), so this is for scripts that already use it. It **costs 1 quota unit** and takes about 15 seconds. It is synchronous, with no `async` option. The body must be JSON (`content-type: application/json`), or the server answers `415`. The URL is validated, and PSI errors are mapped, exactly as in `POST /report`.
-
-| Field | Default | Notes |
-| --- | --- | --- |
-| `url` | *required* | An `http`/`https` page. Validated as in `POST /report`: a private address is only warned about, and PSI can't reach it. |
-| `strategy` | `mobile` | `mobile` or `desktop`. |
-| `save` | `true` | `false` returns the check without writing it to `data/`. |
-
-```bash
-curl -X POST http://127.0.0.1:3939/seo \
-  -H 'content-type: application/json' \
-  -d '{"url":"https://example.com","strategy":"mobile"}'
-# -> {"check":{ "seoId":"2026-11-26T10-00-00Z-mobile-seo", "score":92, ... },"saved":true}
-```
-
-The response is `200 { "check": SeoCheck, "saved": boolean }`. A failed PSI call is `502` with code `INSUFFICIENT_RUNS` ("Only 0 of 1 PSI runs succeeded", followed by PSI's own message), the same answer `POST /report` gives for a one-run report.
-
-### `GET /seo/:seoId`
-
-Re-reads a saved SEO check. No quota cost. A malformed id is `400`; an id that isn't stored is `404`.
-
-```bash
-curl http://127.0.0.1:3939/seo/2026-11-26T10-00-00Z-mobile-seo
-```
-
-### `GET /seo?url=&strategy=`
-
-Lists saved SEO checks, newest first, as `{ "checks": [...] }`. Each entry has `seoId`, `host`, `url`, `strategy`, `fetchedAt`, `score` and `counts`. Both filters are optional: `url` is the exact page, `strategy` is `mobile` or `desktop`. No quota cost.
-
-```bash
-curl "http://127.0.0.1:3939/seo?url=https://example.com&strategy=mobile"
-```
-
 ### `GET /jobs/:jobId`
 
 The state of an `async=true` report: `queued`, `running`, `done` or `failed`. While it runs, `progress` has one entry per finished PSI attempt (`run`, `ok`, `score`, or `error`, and `cached` for a repeated analysis that is retried), which is what the web UI draws live. When it is `done`, `result` is the report; when it is `failed`, `error` says why. Jobs are kept in memory, so a restart forgets them.
@@ -1116,7 +1092,7 @@ curl http://127.0.0.1:3939/jobs/job_m1a2b3_7
 
 ### `GET /reports`
 
-Every stored report, newest first, as `{ "reports": [...] }`: the CLI's `--list`. Each entry has `reportId`, `host`, `url`, `strategy`, `stat`, `generatedAt`, `runsRequested`, `runsSucceeded`, `score`, `lcp`, `meetsTarget`, `targetsFailing` and `targetsTotal`. No quota cost. SEO checks are never listed here.
+Every report the UI has stored in MongoDB, newest first, as `{ "reports": [...] }`: the same shape as the CLI's `--list`. Each entry has `reportId`, `host`, `url`, `strategy`, `stat`, `generatedAt`, `runsRequested`, `runsSucceeded`, `score`, `lcp`, `meetsTarget`, `targetsFailing` and `targetsTotal`. No quota cost.
 
 ```bash
 curl http://127.0.0.1:3939/reports
@@ -1124,12 +1100,12 @@ curl http://127.0.0.1:3939/reports
 
 ### `POST /reanalyze`
 
-The CLI's `--reanalyze`: rebuilds stored reports from their own `runs.json` with today's rules. No quota cost. Send `{ "reportId": "..." }` for one report or omit it for all, and `"save": false` to preview without writing. The answer is `{ "reanalyzed": [ { "reportId", "delta", "saved" } ] }`, where `delta` lists the recovered costs, corrected zeroes and changed failing metrics. It rewrites files, so it takes only a JSON body (`415` otherwise).
+The CLI's `--reanalyze` for the UI's reports: rebuilds them from their own stored runs with today's rules. No quota cost. Send `{ "reportId": "..." }` for one report or omit it for all, and `"save": false` to preview without writing. The answer is `{ "reanalyzed": [ { "reportId", "delta", "saved" } ] }`, where `delta` lists the recovered costs, corrected zeroes and changed failing metrics. It rewrites stored reports (never their runs), so it takes only a JSON body (`415` otherwise).
 
 ```bash
 curl -X POST http://127.0.0.1:3939/reanalyze \
   -H 'content-type: application/json' \
-  -d '{"reportId":"2026-11-26T12-19-33Z-mobile","save":false}'
+  -d '{"reportId":"2026-11-27T04-56-37Z-mobile","save":false}'
 ```
 
 ### `GET /targets`
@@ -1172,7 +1148,7 @@ The code is in three places:
 | `web/` | The Next.js web UI. `web/src/` holds its views and the small helpers that turn API answers into what the page shows; it imports the CLI's own formatting from `src/` rather than redoing it. |
 | `tests/` | Vitest tests for both, including tests that the page and the CLI agree. |
 
-Tests use saved PSI fixtures in `tests/fixtures/` (performance only, SEO only, and every category) and a mocked `fetch`; **no test touches the network.** Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
+Tests use saved PSI fixtures in `tests/fixtures/` (performance only, SEO only, and every category) and a mocked `fetch`; **no test calls PSI.** The one exception to staying offline is `tests/mongo-store.test.ts`, which runs against the dev MongoDB (in the `PSI-API-test` database) when `MONGODB_URI` is set and is skipped otherwise. Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
 
 To regenerate the fixture: `node scripts/make-fixture.js`.
 

@@ -8,6 +8,7 @@ import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets } from '../src/targets.js';
 import { saveReport, loadReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 import { rerunRequest } from '../web/src/reanalyze.js';
 import { makeReport } from './helpers.js';
 
@@ -22,7 +23,7 @@ beforeAll(async () => {
   process.env.PSI_DATA_DIR = dir;
   const slow = [0, 1, 2, 3].map((i) => makeReport({ fetchTime: `s${i}`, metrics: { lcp: 3300 + i * 20 } }));
   await saveReport(applyTargets(aggregateReports(slow, { reportId: BEFORE, runsRequested: 4 })), slow, dir);
-  app = buildServer();
+  app = buildServer({ store: new FileStore() });
   await app.ready();
 });
 
@@ -46,7 +47,7 @@ describe('re-analyze on a report', () => {
     expect(request).toMatchObject({ url: report.url, strategy: report.strategy, runs: report.runsRequested });
     // Validated by the same route the run form uses; async=true returns a job id.
     // fetch is never reached here: the job starts and this test does not wait on it.
-    const fake = buildServer({ fetchImpl: (async () => new Response('{}', { status: 500 })) as typeof fetch, sleepImpl: async () => {} });
+    const fake = buildServer({ store: new FileStore(), fetchImpl: (async () => new Response('{}', { status: 500 })) as typeof fetch, sleepImpl: async () => {} });
     await fake.ready();
     try {
       const started = await fake.inject({ method: 'POST', url: '/report', payload: { ...request, async: true } });

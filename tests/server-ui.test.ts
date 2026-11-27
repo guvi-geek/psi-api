@@ -12,6 +12,7 @@ import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets, loadTargets } from '../src/targets.js';
 import { listReports, loadReport, saveReport } from '../src/storage.js';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 import { fakeResponse, fixtureRaw, makeReport } from './helpers.js';
 
 const BEFORE_ID = '2026-09-29T10-30-00Z-mobile';
@@ -71,7 +72,7 @@ beforeAll(async () => {
     dir,
   );
 
-  app = buildServer();
+  app = buildServer({ store: new FileStore() });
   await app.ready();
 });
 
@@ -164,7 +165,7 @@ describe('GET /targets', () => {
 describe('runs through the server', () => {
   it('records live per-run progress on an async job, and save=false writes nothing', async () => {
     const psi = fakePsi();
-    const server = buildServer({ fetchImpl: psi.impl, sleepImpl: async () => {} });
+    const server = buildServer({ store: new FileStore(), fetchImpl: psi.impl, sleepImpl: async () => {} });
     await server.ready();
     try {
       const countBefore = (await listReports(dir)).length;
@@ -190,7 +191,7 @@ describe('runs through the server', () => {
 
   it('saves by default, so the new report shows up in /reports', async () => {
     const psi = fakePsi();
-    const server = buildServer({ fetchImpl: psi.impl, sleepImpl: async () => {} });
+    const server = buildServer({ store: new FileStore(), fetchImpl: psi.impl, sleepImpl: async () => {} });
     await server.ready();
     try {
       const response = await server.inject({

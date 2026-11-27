@@ -10,7 +10,6 @@ import {
   isSeoId,
   makeSeoId,
   normalizeSeo,
-  runSeoCheck,
   seoSections,
   toCell,
   toTable,
@@ -168,31 +167,6 @@ describe('cells', () => {
     expect(toTable({ type: 'list', items: [table, table] })!.rows).toHaveLength(2);
     expect(toTable({ type: 'debugdata', items: [] })).toBeNull();
     expect(toTable(undefined)).toBeNull();
-  });
-});
-
-describe('runSeoCheck', () => {
-  it('asks PSI for the seo category only, once, and names the check by time and device', async () => {
-    const requested: string[] = [];
-    const fetchImpl = (async (input: string | URL) => {
-      requested.push(String(input));
-      return new Response(JSON.stringify(RAW), { status: 200, headers: { 'content-type': 'application/json' } });
-    }) as typeof fetch;
-    const check = await runSeoCheck({
-      url: URL_,
-      strategy: 'desktop',
-      apiKey: 'test-key',
-      fetchImpl,
-      sleepImpl: async () => {},
-      date: new Date('2026-11-26T10:00:00.000Z'),
-    });
-    expect(requested).toHaveLength(1);
-    const query = new URL(requested[0]!).searchParams;
-    expect(query.getAll('category')).toEqual(['seo']);
-    expect(query.get('strategy')).toBe('desktop');
-    expect(check.seoId).toBe('2026-11-26T10-00-00Z-desktop-seo');
-    expect(check.strategy).toBe('desktop');
-    expect(check.url).toBe(URL_);
   });
 });
 

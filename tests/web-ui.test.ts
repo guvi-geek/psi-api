@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 
 let root: string;
 let app: FastifyInstance;
@@ -21,7 +22,7 @@ beforeAll(async () => {
   // A servable type outside _next: only the path check can stop this one.
   await writeFile(path.join(root, 'outside.js'), 'leak()');
   await writeFile(path.join(webDir, 'outside.js'), 'leak()');
-  app = buildServer({ webDir });
+  app = buildServer({ store: new FileStore(), webDir });
   await app.ready();
 });
 
@@ -67,7 +68,7 @@ describe('web UI serving', () => {
   });
 
   it('serves nothing at / when the UI has not been built', async () => {
-    const bare = buildServer({ webDir: path.join(root, 'missing') });
+    const bare = buildServer({ store: new FileStore(), webDir: path.join(root, 'missing') });
     await bare.ready();
     try {
       expect((await bare.inject({ method: 'GET', url: '/' })).statusCode).toBe(404);

@@ -11,7 +11,8 @@ import { normalizeReport } from './insights.js';
 import { PsiError, runPsiCall, validateTargetUrl, type RetryInfo } from './psiClient.js';
 import { isPageNotFound, isUnreachableMessage } from './validity.js';
 import { applyTargets, loadTargets, type Targets } from './targets.js';
-import { makeReportId, saveCategories, saveReport } from './storage.js';
+import { makeReportId } from './storage.js';
+import { FileStore, type ReportStore } from './report-store.js';
 
 export const MAX_RUNS = 40;
 export const DEFAULT_RUNS = 10;
@@ -37,6 +38,8 @@ export interface RunnerOptions {
   /** Set false to skip writing to disk (used by tests). */
   save?: boolean;
   dataDir?: string;
+  /** Where a saved report goes. Defaults to files under dataDir (the CLI); the UI server passes MongoDB. */
+  store?: ReportStore;
   targets?: Targets;
   onRetry?: (info: RetryInfo) => void;
   onRunFinished?: (info: {
@@ -97,6 +100,7 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
     concurrency = resolveConcurrency(),
     save = true,
     dataDir,
+    store = new FileStore(dataDir),
     targets,
     onRetry,
     onRunFinished,
@@ -213,9 +217,18 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
 
   let dir: string | undefined;
   if (save) {
-    const saved = await saveReport(aggregated, ordered, dataDir);
-    dir = saved.dir;
-    if (Object.keys(reportCategories).length > 0) await saveCategories(aggregated, reportCategories, dataDir);
+    const saved = await store.saveReport(aggregated, ordered);
+    dir = saved.location;
+    // The report is stored by now, so a failure here must not throw away a measurement that spent quota.
+    if (Object.keys(reportCategories).length > 0) {
+      try {
+        await store.saveCategories(aggregated, reportCategories);
+      } catch (error) {
+        runWarnings.push(
+          `Saved the report but not its other categories (SEO and more): ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
   }
 
   const result: RunnerResult = { report: aggregated, runs: ordered, categories: reportCategories, warnings: runWarnings };

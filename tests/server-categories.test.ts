@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildServer } from '../src/server.js';
+import { FileStore } from '../src/report-store.js';
 import { aggregateReports } from '../src/aggregate.js';
 import { applyTargets } from '../src/targets.js';
 import { saveReport } from '../src/storage.js';
@@ -36,7 +37,7 @@ beforeAll(async () => {
   // A report saved before runs read every category: no categories.json beside it.
   const runs = [0, 1].map((i) => makeReport({ fetchTime: `o${i}` }));
   await saveReport(applyTargets(aggregateReports(runs, { reportId: OLD_ID, runsRequested: 2 })), runs, dir);
-  app = buildServer({ fetchImpl, sleepImpl: async () => {} });
+  app = buildServer({ store: new FileStore(), fetchImpl, sleepImpl: async () => {} });
   await app.ready();
 });
 

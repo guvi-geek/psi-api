@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test.watch": "vitest",
     "typecheck": "tsc -p tsconfig.test.json",
+    "db:indexes": "tsx scripts/db-indexes.ts",
     "web:dev": "next dev web -p 5190 --webpack",
     "web:build": "next build web --webpack",
     "web:typecheck": "tsc -p web/tsconfig.json",
@@ -23,6 +24,7 @@
   "dependencies": {
     "dotenv": "^16.4.7",
     "fastify": "^5.2.1",
+    "mongodb": "6.9.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {

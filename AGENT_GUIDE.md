@@ -59,6 +59,8 @@ node -e 'const r=require(process.argv[1]);
 
 `--reportId` searches every host directory, so you do not need to know which host a report was filed under — but you do need the ID.
 
+Only reports the CLI measured are in `data/`. Reports measured in the web UI live in MongoDB, not on disk, so the CLI cannot read them. `npm run psi -- --cleanup` deletes every CLI report more than 3 days old (`--dry-run` first to see which); a baseline you still need must be younger than that, or re-measured.
+
 **Baseline hygiene:** pick the baseline with the *same* `environment` line (`lighthouseVersion`, `benchmarkIndex`, `networkUserAgent`). A report from before a PSI infrastructure change is not a valid comparison, and `benchmarkIndex` is the single best predictor — a number that moved with it did not improve.
 
 ### Step 1 — Baseline

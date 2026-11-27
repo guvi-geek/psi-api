@@ -24,10 +24,10 @@ import { filterInsights } from './insights.js';
 import { diagnose } from './diagnose.js';
 import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
-import { UrlValidationError, validateTargetUrl } from './psiClient.js';
-import { getDataDir, listReports, loadCategories, loadReport, loadRuns, saveReport } from './storage.js';
-import { isSeoId, runSeoCheck, type SeoCheck } from './seo.js';
-import { listSeoChecks, loadSeoCheck, saveSeoCheck } from './seo-storage.js';
+import { UrlValidationError } from './psiClient.js';
+import type { ReportStore } from './report-store.js';
+import { closeMongo, connectMongo } from './db/mongo.js';
+import { MongoStore } from './db/mongo-store.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { loadTargets } from './targets.js';
 import { assessMeasurement } from './validity.js';
@@ -170,6 +170,8 @@ function compact(query: unknown): Record<string, unknown> {
 
 /** Test seam: lets a test drive real runs through a fake PSI. Production passes nothing. */
 export interface ServerOptions {
+  /** Where reports are kept. The server entry point passes MongoDB; tests may pass a FileStore. */
+  store: ReportStore;
   fetchImpl?: typeof fetch;
   sleepImpl?: (ms: number) => Promise<void>;
   /** Built web UI to serve at `/`. Defaults to web/out (the Next.js export); skipped when it has not been built. */
@@ -239,6 +241,7 @@ async function produceReport(
     runs: params.runs,
     stat: params.stat,
     save: params.save,
+    store: serverOptions.store,
     fetchImpl: serverOptions.fetchImpl,
     sleepImpl: serverOptions.sleepImpl,
     onRetry: ({ reason, attempt, maxAttempts, delayMs }) => {
@@ -366,13 +369,13 @@ interface ReanalyzeRow {
 }
 
 /** Same rebuild the CLI's --reanalyze runs: stored runs in, report out, runs.json untouched. */
-async function reanalyzeStored(reportIds: string[], save: boolean): Promise<ReanalyzeRow[]> {
+async function reanalyzeStored(store: ReportStore, reportIds: string[], save: boolean): Promise<ReanalyzeRow[]> {
   const targets = loadTargets();
   const rows: ReanalyzeRow[] = [];
   for (const reportId of reportIds) {
     try {
-      const before = await loadReport(reportId);
-      const runs = await loadRuns(reportId);
+      const before = await store.loadReport(reportId);
+      const runs = await store.loadRuns(reportId);
       if (!runs) {
         rows.push({ reportId, delta: null, error: 'no stored runs', saved: false });
         continue;
@@ -388,7 +391,7 @@ async function reanalyzeStored(reportIds: string[], save: boolean): Promise<Rean
         targets,
       });
       const delta = diffReanalyzed(before, after);
-      if (save) await saveReport(after, runs, getDataDir());
+      if (save) await store.updateReport(after);
       rows.push({ reportId, delta, saved: save });
     } catch (error) {
       rows.push({
@@ -406,25 +409,8 @@ const notFound = (reportId: string) => ({
   error: { code: 'NOT_FOUND', message: `no stored report "${reportId}"` },
 });
 
-/* ------------------------------------ seo ----------------------------------- */
-
-const seoBody = z.object({
-  url: z.string().min(1),
-  strategy: z.enum(STRATEGIES).default('mobile'),
-  /** false = do not write the check to data/. */
-  save: boolish.default(true),
-});
-
-const seoIdParams = z.object({
-  seoId: z.string().refine(isSeoId, 'not an SEO check id (expected <iso time>-<mobile|desktop>-seo)'),
-});
-
-const seoListQuery = z.object({
-  url: z.string().optional(),
-  strategy: z.enum(STRATEGIES).optional(),
-});
-
-export function buildServer(options: ServerOptions = {}): FastifyInstance {
+export function buildServer(options: ServerOptions): FastifyInstance {
+  const { store } = options;
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? 'info' } });
 
   app.setErrorHandler((error, _req, reply) => {
@@ -470,7 +456,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
   app.post('/report', reportHandler);
 
   const findReport = async (reportId: string): Promise<AggregatedReport | null> =>
-    loadReport(reportId);
+    store.loadReport(reportId);
 
   app.get<{ Params: { reportId: string } }>('/report/:reportId', async (req, reply) => {
     const report = await findReport(req.params.reportId);
@@ -491,7 +477,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         .status(404)
         .send({ error: { code: 'NOT_FOUND', message: `no stored report "${req.params.reportId}"` } });
     }
-    return reply.send({ reportId: report.reportId, categories: await loadCategories(report.reportId) });
+    return reply.send({ reportId: report.reportId, categories: await store.loadCategories(report.reportId) });
   });
 
   app.get<{ Params: { reportId: string }; Querystring: Record<string, unknown> }>(
@@ -518,7 +504,7 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
           .status(404)
           .send({ error: { code: 'NOT_FOUND', message: `no stored report "${req.params.reportId}"` } });
       }
-      const runs = await loadRuns(req.params.reportId);
+      const runs = await store.loadRuns(req.params.reportId);
       return reply.send({
         reportId: report.reportId,
         url: report.url,
@@ -555,35 +541,12 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
     return reply.send(insightsPayload(report, filterParams.parse(body.filters ?? {})));
   });
 
-  // The CLI's --list, with the fields a report picker needs. Free: reads data/ only.
-  app.get('/reports', async () => {
-    const reports = [];
-    for (const ref of await listReports()) {
-      const report = await loadReport(ref.reportId);
-      if (!report) continue;
-      const gaps = report.targets?.gaps ?? [];
-      reports.push({
-        reportId: report.reportId,
-        host: ref.host,
-        url: report.url,
-        strategy: report.strategy,
-        stat: report.stat,
-        generatedAt: report.generatedAt,
-        runsRequested: report.runsRequested,
-        runsSucceeded: report.runsSucceeded,
-        score: report.headline.score,
-        lcp: report.headline.metrics.lcp ?? null,
-        meetsTarget: report.targets?.meetsTarget ?? null,
-        targetsFailing: gaps.filter((gap) => !gap.meets).length,
-        targetsTotal: gaps.length,
-      });
-    }
-    return { reports };
-  });
+  // The CLI's --list, with the fields a report picker needs. Free: one read of the store.
+  app.get('/reports', async () => ({ reports: await store.listSummaries() }));
 
-  // The CLI's --reanalyze. Free: rebuilds from runs.json, never calls PSI.
+  // The CLI's --reanalyze. Free: rebuilds from the stored runs, never calls PSI.
   app.post('/reanalyze', async (req, reply) => {
-    // It rewrites files, so it takes only a JSON body. A JSON request needs a CORS
+    // It rewrites stored reports, so it takes only a JSON body. A JSON request needs a CORS
     // preflight, which this server never grants, so another site open in the
     // browser cannot send one. A body-less or text/plain POST can, so it is refused.
     if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
@@ -592,75 +555,17 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
       });
     }
     const body = reanalyzeBody.parse((req.body ?? {}) as object);
-    if (body.reportId && !(await loadReport(body.reportId))) {
+    if (body.reportId && !(await store.loadReport(body.reportId))) {
       return reply.status(404).send(notFound(body.reportId));
     }
     const ids = body.reportId
       ? [body.reportId]
-      : (await listReports()).map((ref) => ref.reportId);
-    return reply.send({ reanalyzed: await reanalyzeStored(ids, body.save) });
+      : (await store.listSummaries()).map((summary) => summary.reportId);
+    return reply.send({ reanalyzed: await reanalyzeStored(store, ids, body.save) });
   });
 
   // The budgets every verdict is graded against. Read-only.
   app.get('/targets', async () => loadTargets());
-
-  // The SEO check: one PSI call with category=seo, stored under data/<host>/seo/,
-  // never read by the report routes. Synchronous: the request waits for PSI.
-  app.post('/seo', async (req, reply) => {
-    // It spends quota, so it takes only a JSON body, for the same reason as /reanalyze:
-    // a cross-site page can send a body-less or text/plain POST, never a JSON one.
-    if (!String(req.headers['content-type'] ?? '').toLowerCase().startsWith('application/json')) {
-      return reply.status(415).send({
-        error: {
-          code: 'UNSUPPORTED_MEDIA_TYPE',
-          message: 'send a JSON body, e.g. {"url": "https://example.com/"}',
-        },
-      });
-    }
-    const body = seoBody.parse((req.body ?? {}) as object);
-    // Same validation /report runs: bad URLs are a 400 before any quota is spent,
-    // private hosts are only warned about.
-    const { url, warnings } = validateTargetUrl(body.url);
-    for (const warning of warnings) req.log.warn(warning);
-
-    let check: SeoCheck;
-    try {
-      check = await runSeoCheck({
-        url,
-        strategy: body.strategy,
-        apiKey: process.env.PSI_API_KEY,
-        fetchImpl: options.fetchImpl,
-        sleepImpl: options.sleepImpl,
-        onRetry: ({ reason, attempt, maxAttempts, delayMs }) => {
-          req.log.warn({ reason, attempt, maxAttempts, delayMs }, 'psi retry');
-        },
-      });
-    } catch (error) {
-      // /report turns a failed PSI call into InsufficientRunsError (502). One call
-      // here is one run, so the same failure gets the same status and body.
-      const message = error instanceof Error ? error.message : String(error);
-      throw new InsufficientRunsError(0, 1, [{ run: 1, message }]);
-    }
-    if (body.save) await saveSeoCheck(check);
-    return reply.send({ check, saved: body.save });
-  });
-
-  app.get<{ Params: { seoId: string } }>('/seo/:seoId', async (req, reply) => {
-    const { seoId } = seoIdParams.parse(req.params);
-    const check = await loadSeoCheck(seoId);
-    if (!check) {
-      return reply
-        .status(404)
-        .send({ error: { code: 'NOT_FOUND', message: `no stored SEO check "${seoId}"` } });
-    }
-    return reply.send(check);
-  });
-
-  // Saved checks, newest first. Free: reads data/ only.
-  app.get('/seo', async (req) => {
-    const query = seoListQuery.parse(compact(req.query));
-    return { checks: await listSeoChecks({ url: query.url || undefined, strategy: query.strategy }) };
-  });
 
   registerWebUi(app, options.webDir ?? DEFAULT_WEB_DIR);
 
@@ -683,31 +588,43 @@ const entry = process.argv[1];
 if (entry && import.meta.url === pathToFileURL(entry).href) {
   const port = Number(process.env.PORT ?? 3939);
   const host = process.env.HOST ?? '127.0.0.1';
-  const app = buildServer();
 
-  if (!process.env.PSI_API_KEY) {
-    app.log.warn(
-      'PSI_API_KEY is not set. PSI will fall back to the shared anonymous quota, which is very low ' +
-        'and typically returns HTTP 429. Copy .env.example to .env and add your key.',
-    );
-  }
-
-  app
-    .listen({ port, host })
-    .then(() => {
-      app.log.info({ host, port }, 'psi-api listening');
-      if (existsSync(path.join(DEFAULT_WEB_DIR, 'index.html'))) {
-        app.log.info(`UI ready at http://${host}:${port}/`);
-      }
-    })
+  // The UI's reports live in MongoDB, so the server does not start without it.
+  connectMongo()
     .catch((error) => {
-      app.log.error(error);
+      console.error(`psi-api: cannot reach MongoDB: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
-    });
+    })
+    .then(() => {
+      const app = buildServer({ store: new MongoStore() });
 
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.on(signal, () => {
-      void app.close().then(() => process.exit(0));
+      if (!process.env.PSI_API_KEY) {
+        app.log.warn(
+          'PSI_API_KEY is not set. PSI will fall back to the shared anonymous quota, which is very low ' +
+            'and typically returns HTTP 429. Copy .env.example to .env and add your key.',
+        );
+      }
+
+      app
+        .listen({ port, host })
+        .then(() => {
+          app.log.info({ host, port }, 'psi-api listening, reports in MongoDB');
+          if (existsSync(path.join(DEFAULT_WEB_DIR, 'index.html'))) {
+            app.log.info(`UI ready at http://${host}:${port}/`);
+          }
+        })
+        .catch((error) => {
+          app.log.error(error);
+          process.exit(1);
+        });
+
+      for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+        process.on(signal, () => {
+          void app
+            .close()
+            .then(() => closeMongo())
+            .then(() => process.exit(0));
+        });
+      }
     });
-  }
 }

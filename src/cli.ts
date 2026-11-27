@@ -18,6 +18,7 @@ import { isSeoId } from './seo.js';
 import { listSeoChecks, loadSeoCheck } from './seo-storage.js';
 import { CATEGORY_TITLES, type CategoryId, type ReportCategories } from './categories.js';
 import { renderSeoCheck, renderSeoList } from './seo-render.js';
+import { cleanupReports, CLEANUP_MAX_AGE_DAYS } from './cleanup.js';
 import {
   ABSENT,
   METRIC_ROWS,
@@ -101,6 +102,10 @@ interface CliOptions {
   seoId?: string;
   /** List saved SEO checks. Costs no PSI quota. */
   seoList: boolean;
+  /** `--cleanup`: delete stored reports more than 3 days old. */
+  cleanup: boolean;
+  /** `--dry-run` with --cleanup: list them, delete nothing. */
+  dryRun: boolean;
 }
 
 /** The options that show a category instead of performance. */
@@ -171,6 +176,10 @@ Options:
                            quota. Combine with --reportId for one report, or
                            omit it to sweep every stored report on disk.
   --list                  List stored reports, newest first. Costs no PSI quota
+  --cleanup               Delete every stored report more than ${CLEANUP_MAX_AGE_DAYS} days old (its
+                           report.json, runs.json and categories.json). Keeps
+                           seo/ checks and optimization-log.md. Honours --json
+  --dry-run               With --cleanup: list what would go, delete nothing
   --compare <before> <after>
                           KEEP, REVERT or INCONCLUSIVE for --metric (default:
                           the baseline's worst failing metric), plus the request
@@ -442,6 +451,8 @@ export function parseArgs(argv: string[]): CliOptions | null {
   let seo = false;
   let seoId: string | undefined;
   let seoList = false;
+  let cleanup = false;
+  let dryRun = false;
   // Every flag given, so an SEO mode can refuse the ones that mean nothing to it.
   const flags: string[] = [];
   const categoryFlags: string[] = [];
@@ -582,6 +593,12 @@ export function parseArgs(argv: string[]): CliOptions | null {
       case '--list':
         list = true;
         break;
+      case '--cleanup':
+        cleanup = true;
+        break;
+      case '--dry-run':
+        dryRun = true;
+        break;
       case '--compare': {
         const beforeId = takeValue(argv, i, arg);
         const afterId = argv[i + 2];
@@ -635,6 +652,14 @@ export function parseArgs(argv: string[]): CliOptions | null {
 
   const url = positional[0];
 
+  // --cleanup is its own command: it takes no url and only --dry-run and --json.
+  if (dryRun && !cleanup) fail('--dry-run only works with --cleanup');
+  if (cleanup) {
+    const extra = flags.find((flag) => !['--cleanup', '--dry-run', '--json'].includes(flag));
+    if (extra) fail(`${extra} cannot be combined with --cleanup`);
+    if (url) fail(`unexpected argument "${url}" - --cleanup takes no url`);
+  }
+
   // A category view, --seoId and --seoList are their own commands: one at a
   // time, and only with the flags that mean something to them.
   const seoModes = [...categoryFlags, seoId !== undefined ? '--seoId' : '', seoList ? '--seoList' : ''].filter(Boolean);
@@ -658,7 +683,7 @@ export function parseArgs(argv: string[]): CliOptions | null {
 
   // A re-analysis reads reports from disk, so it needs neither a url nor an id:
   // with no `--reportId` it sweeps everything stored.
-  if (!url && !reportId && !reanalyzeFlag && !list && !compare && !seoMode) {
+  if (!url && !reportId && !reanalyzeFlag && !list && !compare && !seoMode && !cleanup) {
     fail(`a url or --reportId is required\n${USAGE}`);
   }
   if (url && positional.length > 1) fail(`unexpected argument "${positional[1]}"`);
@@ -696,6 +721,8 @@ export function parseArgs(argv: string[]): CliOptions | null {
     ...(category ? { category } : {}),
     seoId,
     seoList,
+    cleanup,
+    dryRun,
   };
 }
 
@@ -1538,6 +1565,35 @@ async function runList(options: CliOptions): Promise<number> {
   return 0;
 }
 
+async function runCleanup(options: CliOptions): Promise<number> {
+  const result = await cleanupReports({ dryRun: options.dryRun });
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return result.failed.length > 0 ? 1 : 0;
+  }
+  const useColor = colorEnabled();
+  const verb = result.dryRun ? 'would delete' : 'deleted';
+  const lines = [
+    '',
+    `${paint('bold', 'CLEANUP', useColor)}  ${paint('dim', `reports more than ${result.maxAgeDays} days old${result.dryRun ? ' (dry run, nothing deleted)' : ''}`, useColor)}`,
+  ];
+  if (result.removed.length === 0 && result.failed.length === 0) {
+    lines.push(paint('dim', `${INDENT}nothing older than ${result.maxAgeDays} days`, useColor));
+  }
+  for (const entry of result.removed) {
+    lines.push(`  ${verb}  ${entry.host}/${entry.reportId}  ${entry.ageDays} days old`);
+  }
+  for (const entry of result.failed) {
+    lines.push(paint('red', `  failed   ${entry.host}/${entry.reportId}  ${entry.error ?? ''}`, useColor));
+  }
+  lines.push(
+    paint('dim', `${INDENT}${result.removed.length} ${verb}, ${result.failed.length} failed, ${result.kept} kept`, useColor),
+  );
+  lines.push('');
+  process.stdout.write(`${lines.join('\n')}\n`);
+  return result.failed.length > 0 ? 1 : 0;
+}
+
 function renderCompare(before: AggregatedReport, after: AggregatedReport, result: CompareResult): string {
   const useColor = colorEnabled();
   const tone = result.verdict === 'KEEP' ? 'green' : result.verdict === 'REVERT' ? 'red' : 'yellow';
@@ -1687,6 +1743,7 @@ export async function main(argv = process.argv.slice(2), deps: CliDeps = {}): Pr
     if (options.seoId !== undefined) return await runSeoRead(options);
     if (options.seoList) return await runSeoList(options);
     if (options.list) return await runList(options);
+    if (options.cleanup) return await runCleanup(options);
     if (options.compare) return await runCompare(options);
     if (options.reanalyze) return await runReanalyze(options);
 

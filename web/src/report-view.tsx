@@ -55,7 +55,7 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
         <h1 className="page-title">{state.error.status === 404 ? 'No saved report with this id' : 'Cannot open this report'}</h1>
         <p className="lede">
           {state.error.status === 404
-            ? `${reportId} is not in data/. It may have been measured with saving turned off, or moved.`
+            ? `${reportId} is not in the stored reports. It may have been measured with saving turned off.`
             : state.error.message}
         </p>
       </section>
