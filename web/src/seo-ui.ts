@@ -1,30 +1,20 @@
 /**
- * Pure logic behind the SEO tab. No React here, so tests/web-seo.test.ts can
+ * Pure logic behind the SEO and more tab. No React here, so tests/web-seo.test.ts can
  * check it directly. The check itself is shaped by src/seo.ts; this only
  * decides how the web UI words and marks what is already there.
  */
 import { lighthouseLabel } from '../../src/render';
-import type { SeoAuditState, SeoCell, SeoCheck, SeoCounts, SeoSection, SeoSummary } from '../../src/seo';
+import { CATEGORY_IDS, isCategoryId, type CategoryId } from '../../src/categories';
+import type { SeoAuditState, SeoCell, SeoCheck, SeoCounts, SeoSection } from '../../src/seo';
 import { parseDescription, type Inline } from './findings';
 import { formatWhen, scoreBand } from './run';
 
 export type Tone = 'good' | 'warn' | 'bad' | 'neutral';
 
-/** The newest saved check to open, or null for the empty state. The server lists newest first. */
-export function newestCheckId(list: { checks: SeoSummary[] } | null | undefined): string | null {
-  return list?.checks[0]?.seoId ?? null;
+/** The category to open from the page URL; the first one when the URL names none or an unknown one. */
+export function chosenCategory(value: string | null): CategoryId {
+  return value && isCategoryId(value) ? value : CATEGORY_IDS[0];
 }
-
-/** The request the Check SEO button sends: always saved, so it shows up next time. */
-export function checkRequest(report: { url: string; strategy: SeoCheck['strategy'] }): {
-  url: string;
-  strategy: SeoCheck['strategy'];
-  save: true;
-} {
-  return { url: report.url, strategy: report.strategy, save: true };
-}
-
-export const CHECK_TITLE = 'Run one SEO check on this page. Uses 1 PSI call from your quota and saves the check.';
 
 /** Lighthouse colour bands; no colour when the category could not be scored. */
 export function seoScoreTone(score: number | null): Tone {

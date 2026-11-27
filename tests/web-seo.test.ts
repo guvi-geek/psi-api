@@ -1,5 +1,5 @@
 /**
- * The SEO tab's logic, on the real PSI SEO response and on a broken copy of it:
+ * The SEO and more tab's logic, on the real PSI SEO response and on a broken copy of it:
  * the header words, the state marks, which sections and audits open, and which
  * table cells may become links.
  */
@@ -7,18 +7,16 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { normalizeSeo, seoSections, type SeoAuditState, type SeoSummary } from '../src/seo.js';
+import { normalizeSeo, seoSections, type SeoAuditState } from '../src/seo.js';
 import {
   auditMark,
   auditOpen,
   cellView,
-  CHECK_TITLE,
   checkedWhen,
   checkedWith,
-  checkRequest,
+  chosenCategory,
   countItems,
   isNumericHeading,
-  newestCheckId,
   redirectedTo,
   safeHref,
   sectionOpen,
@@ -79,28 +77,13 @@ function failingRaw() {
 const passing = normalizeSeo(RAW, { url: URL_, strategy: 'mobile', seoId: ID });
 const failing = normalizeSeo(failingRaw(), { url: URL_, strategy: 'desktop', seoId: ID });
 
-const summary = (seoId: string): SeoSummary => ({
-  seoId,
-  host: 'www.guvi.in',
-  url: URL_,
-  strategy: 'mobile',
-  fetchedAt: '2026-11-26T10:00:00.000Z',
-  score: 100,
-  counts: passing.counts,
-});
-
 describe('what the tab opens on', () => {
-  it('opens the newest saved check, and shows the empty state when there is none', () => {
-    const newer = '2026-11-26T10-00-00Z-mobile-seo';
-    const older = '2026-11-25T10-00-00Z-mobile-seo';
-    expect(newestCheckId({ checks: [summary(newer), summary(older)] })).toBe(newer);
-    expect(newestCheckId({ checks: [] })).toBeNull();
-    expect(newestCheckId(undefined)).toBeNull();
-  });
-
-  it('asks for one saved check of the report page on the report device', () => {
-    expect(checkRequest({ url: URL_, strategy: 'desktop' })).toEqual({ url: URL_, strategy: 'desktop', save: true });
-    expect(CHECK_TITLE).toMatch(/1 PSI call from your quota/);
+  it('opens the category the page URL names, or the first one', () => {
+    expect(chosenCategory('seo')).toBe('seo');
+    expect(chosenCategory('agentic-browsing')).toBe('agentic-browsing');
+    expect(chosenCategory(null)).toBe('accessibility');
+    expect(chosenCategory('performance')).toBe('accessibility');
+    expect(chosenCategory('nope')).toBe('accessibility');
   });
 });
 

@@ -1,159 +1,133 @@
 'use client';
 
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
-import { seoSections, type SeoAudit, type SeoCell, type SeoCheck, type SeoSection, type SeoSummary, type SeoTable } from '../../src/seo';
+import { CATEGORY_IDS, CATEGORY_TITLES, type CategoryId, type ReportCategories } from '../../src/categories';
+import { seoSections, type CategoryCheck, type SeoAudit, type SeoCell, type SeoSection, type SeoTable } from '../../src/seo';
 import { api, ApiError } from './api';
 import { parseDescription } from './findings';
+import { href } from './router';
 import {
   auditMark,
   auditOpen,
   cellView,
-  CHECK_TITLE,
   checkedWhen,
   checkedWith,
-  checkRequest,
+  chosenCategory,
   countItems,
   isNumericHeading,
-  newestCheckId,
   redirectedTo,
   sectionOpen,
   seoScoreTone,
   titleParts,
 } from './seo-ui';
 
-type Loaded = { state: 'loading' } | { state: 'empty' } | { state: 'ready'; check: SeoCheck } | { state: 'failed'; error: ApiError };
+type Loaded =
+  | { state: 'loading' }
+  | { state: 'missing' }
+  | { state: 'ready'; categories: ReportCategories }
+  | { state: 'failed'; error: ApiError };
 
 /**
- * The SEO section of the PageSpeed Insights website for this report's page.
- * An SEO check is its own PSI call, saved apart from the performance runs.
+ * Accessibility, best practices, SEO and agentic browsing, as the PageSpeed
+ * Insights website shows them. Every run reads them in the same PSI call as
+ * its performance, so this costs nothing: it shows the report's median run.
  */
-export function SeoView({ report }: { report: AggregatedReport }) {
+export function SeoView({ report, params }: { report: AggregatedReport; params: URLSearchParams }) {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
-  const [checking, setChecking] = useState(false);
-  const [checkError, setCheckError] = useState<string | null>(null);
+  const [chosen, setChosen] = useState<CategoryId>(() => chosenCategory(params.get('category')));
 
-  // The newest saved check for this page and device. Reading it costs no quota.
   useEffect(() => {
     let live = true;
     setLoaded({ state: 'loading' });
-    const query = new URLSearchParams({ url: report.url, strategy: report.strategy });
-    api<{ checks: SeoSummary[] }>(`/seo?${query}`)
-      .then(async (list) => {
-        const id = newestCheckId(list);
-        if (!id) return live && setLoaded({ state: 'empty' });
-        const check = await api<SeoCheck>(`/seo/${encodeURIComponent(id)}`);
-        return live && setLoaded({ state: 'ready', check });
+    api<{ categories: ReportCategories | null }>(`/report/${encodeURIComponent(report.reportId)}/categories`)
+      .then(({ categories }) => {
+        if (!live) return;
+        setLoaded(categories && Object.keys(categories).length > 0 ? { state: 'ready', categories } : { state: 'missing' });
       })
       .catch((error: ApiError) => live && setLoaded({ state: 'failed', error }));
     return () => {
       live = false;
     };
-  }, [report.url, report.strategy]);
+  }, [report.reportId]);
 
-  // One PSI call with the SEO category. Saved, so the tab opens on it next time.
-  async function runCheck() {
-    setCheckError(null);
-    setChecking(true);
-    try {
-      const { check } = await api<{ check: SeoCheck; saved: boolean }>('/seo', {
-        method: 'POST',
-        body: JSON.stringify(checkRequest(report)),
-      });
-      setLoaded({ state: 'ready', check });
-    } catch (caught) {
-      setCheckError(caught instanceof ApiError ? caught.message : String(caught));
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  const button = (label: string, primary: boolean) => (
-    <button
-      type="button"
-      className={`button ${primary ? 'button-primary' : 'button-quiet'}`}
-      onClick={runCheck}
-      disabled={checking}
-      aria-busy={checking}
-      title={CHECK_TITLE}
-    >
-      {checking ? (
-        <>
-          <span className="spinner spinner-small" aria-hidden="true" />
-          Checking
-        </>
-      ) : (
-        label
-      )}
-    </button>
-  );
-  const error = checkError && (
-    <p className="form-error" role="alert">
-      {checkError}
-    </p>
-  );
+  // Keep the chosen category in the page URL, in place.
+  useEffect(() => {
+    const next = new URLSearchParams({ tab: 'seo' });
+    if (chosen !== CATEGORY_IDS[0]) next.set('category', chosen);
+    history.replaceState(null, '', href.report(report.reportId, next));
+  }, [chosen, report.reportId]);
 
   if (loaded.state === 'loading') {
     return (
       <div className="panel" aria-busy="true">
-        <p className="muted seo-flush">Looking for a saved SEO check of this page.</p>
+        <p className="muted seo-flush">Reading this report&apos;s categories.</p>
       </div>
     );
   }
 
-  if (loaded.state === 'empty' || loaded.state === 'failed') {
+  if (loaded.state !== 'ready') {
     return (
-      <div className="stack">
-        <div className="panel empty seo-empty">
-          <h2 className="panel-title seo-flush">No SEO check of this page yet</h2>
-          <p className="muted seo-flush">
-            An SEO check asks PageSpeed Insights for its SEO category only: whether search engines can crawl and index
-            the page, and whether its title, description, links and images are written for them. It is one PSI call, saved
-            on its own and separate from the performance runs, so it does not change this report.
-          </p>
-          {loaded.state === 'failed' && (
-            <p className="note-warn seo-flush">Could not read the saved SEO checks: {loaded.error.message}</p>
-          )}
-          <div className="seo-empty-actions">
-            {button('Check SEO', true)}
-            <span className="muted seo-flush">
-              {report.strategy === 'mobile' ? 'Mobile' : 'Desktop'}, about 15 seconds
-            </span>
-          </div>
-          {error}
-        </div>
+      <div className="panel empty seo-empty">
+        <h2 className="panel-title seo-flush">No SEO and more for this report</h2>
+        <p className="muted seo-flush">
+          It was measured before every run read accessibility, best practices, SEO and agentic browsing alongside
+          performance. Re-analyze, at the top right, measures the page again with the same settings; the new report has
+          them, at no extra PSI calls.
+        </p>
+        {loaded.state === 'failed' && <p className="note-warn seo-flush">Could not read them: {loaded.error.message}</p>}
       </div>
     );
   }
 
-  const { check } = loaded;
+  const { categories } = loaded;
+  const available = CATEGORY_IDS.filter((id) => categories[id]);
+  const current = categories[chosen] ? chosen : available[0]!;
+  const check = categories[current]!;
   return (
     <div className="stack">
-      <SeoHeader check={check} action={button('Check again', false)} error={error} />
+      <div className="category-strip" role="tablist" aria-label="Category">
+        {available.map((id) => {
+          const entry = categories[id]!;
+          const tone = seoScoreTone(entry.score);
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={id === current}
+              className="category-card"
+              onClick={() => setChosen(id)}
+            >
+              <span className={`category-score ${tone === 'neutral' ? 'muted-cell' : `text-${tone}`}`}>{entry.score ?? '—'}</span>
+              <span className="category-name">{CATEGORY_TITLES[id]}</span>
+              <span className={`category-failed${entry.counts.failed > 0 ? ' text-bad' : ''}`}>
+                {entry.counts.failed > 0 ? `${entry.counts.failed} failed` : 'none failed'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <CategoryHeader check={check} />
       {seoSections(check).map((section) => (
-        <SeoSectionBlock key={`${section.state}-${section.groupId ?? section.title}`} section={section} />
+        <SeoSectionBlock key={`${current}-${section.state}-${section.groupId ?? section.title}`} section={section} />
       ))}
       <p className="note seo-flush">
-        Like the PageSpeed Insights website: the score counts only weighted audits, and the checks under Additional
-        items are never scored. Every check is saved under data/, apart from the performance reports.
+        Read from this report&apos;s median run, in the same PSI calls as its performance. As on the PageSpeed Insights
+        website, the score counts only weighted audits, and the items to check manually are never scored.
       </p>
     </div>
   );
 }
 
-function SeoHeader({ check, action, error }: { check: SeoCheck; action: ReactNode; error: ReactNode }) {
-  const tone = seoScoreTone(check.score);
+function CategoryHeader({ check }: { check: CategoryCheck }) {
   const redirect = redirectedTo(check);
   return (
     <div className="panel seo-header">
-      <div className="seo-score">
-        <span className={`score-value ${tone === 'neutral' ? 'muted-cell' : `text-${tone}`}`}>{check.score ?? '—'}</span>
-        <span className="score-of">/ 100</span>
-      </div>
       <div className="seo-heading">
         <h2 className="panel-title seo-flush">{check.title}</h2>
         <p className="report-sub">
-          {checkedWith(check)}, checked{' '}
+          {checkedWith(check)}, measured{' '}
           <time dateTime={check.fetchedAt} title={new Date(check.fetchedAt).toLocaleString()}>
             {checkedWhen(check.fetchedAt)}
           </time>
@@ -179,9 +153,7 @@ function SeoHeader({ check, action, error }: { check: SeoCheck; action: ReactNod
             ))}
           </ul>
         )}
-        {error}
       </div>
-      <div className="seo-actions">{action}</div>
     </div>
   );
 }
