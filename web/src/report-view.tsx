@@ -64,7 +64,10 @@ export function ReportView(props: { reportId: string; params: URLSearchParams })
   if (!state.data) {
     return (
       <section className="page" aria-busy="true">
-        <p className="lede">Opening the report.</p>
+        <p className="lede loading-line" role="status">
+          <span className="spinner spinner-small" aria-hidden="true" />
+          Opening the report
+        </p>
       </section>
     );
   }

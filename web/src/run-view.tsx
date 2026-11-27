@@ -92,6 +92,9 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
   const started = Date.parse(job.startedAt ?? job.createdAt);
   const ended = job.finishedAt ? Date.parse(job.finishedAt) : now;
   const running = job.status === 'running' || job.status === 'queued';
+  // Every run is in, but the server is still aggregating and saving; then the report opens.
+  const building = running && finished >= request.runs;
+  const opening = job.status === 'done' && job.save !== false && Boolean(job.result);
 
   return (
     <section className="page">
@@ -118,6 +121,12 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
       <p className="run-status" aria-live="polite">
         {finished} of {request.runs} runs finished, {formatElapsed(ended - started)} {running ? 'so far' : 'in total'}
       </p>
+      {(building || opening) && (
+        <p className="loading-line" role="status">
+          <span className="spinner spinner-small" aria-hidden="true" />
+          {opening ? 'Opening the report' : 'Building the report'}
+        </p>
+      )}
       {trouble && running && <p className="form-error">Lost contact with the server: {trouble} Retrying.</p>}
 
       {job.status === 'done' && job.result && job.save === false && <UnsavedResult job={job} />}

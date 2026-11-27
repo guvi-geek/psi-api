@@ -797,6 +797,13 @@ a:hover {
   opacity: 1;
   cursor: progress;
 }
+/* A line of text with a spinner before it, for a short wait. */
+.loading-line {
+  display: flex;
+  align-items: center;
+  color: var(--muted);
+}
+
 /* In a button: smaller, and spaced from its text. */
 .spinner-small {
   width: 12px;
