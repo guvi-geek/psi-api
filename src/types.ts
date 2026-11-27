@@ -499,6 +499,10 @@ export interface Job {
   progress?: JobProgress[];
   /** False when the report is not written to data/, so there is no stored report to open. */
   save?: boolean;
+  /** Once done: whether the report really was stored (saving on, and the store took it). */
+  saved?: boolean;
+  /** Once done: what the run warned about, such as a report that could not be saved. */
+  warnings?: string[];
 }
 
 export interface JobProgress {

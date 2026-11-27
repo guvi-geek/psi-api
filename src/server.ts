@@ -234,7 +234,7 @@ async function produceReport(
   log: FastifyBaseLogger,
   serverOptions: ServerOptions,
   onProgress?: (entry: JobProgress) => void,
-): Promise<AggregatedReport> {
+): Promise<{ report: AggregatedReport; saved: boolean; warnings: string[] }> {
   const result = await runReport({
     url: params.url,
     strategy: params.strategy,
@@ -254,7 +254,23 @@ async function produceReport(
     },
   });
   for (const warning of result.warnings) log.warn(warning);
-  return result.report;
+  return { report: result.report, saved: result.saved, warnings: result.warnings };
+}
+
+/**
+ * Saving was asked for but the store did not take the report. Such a report is
+ * not cached, so the next request measures again and tries to save it.
+ */
+function lostSave(params: { save: boolean }, produced: { saved: boolean }): boolean {
+  return params.save && !produced.saved;
+}
+
+/** A synchronous answer is the report itself, so a report that could not be stored says so in a header. */
+function markUnsaved(reply: FastifyReply, params: { save: boolean }, produced: { saved: boolean; warnings: string[] }) {
+  if (lostSave(params, produced)) {
+    const why = produced.warnings.find((warning) => warning.startsWith('Measured, but')) ?? 'the report could not be saved';
+    reply.header('x-psi-not-saved', why.replace(/[\r\n]+/g, ' '));
+  }
 }
 
 function startJob(params: ReportParams, log: FastifyBaseLogger, serverOptions: ServerOptions): Job {
@@ -276,10 +292,12 @@ function startJob(params: ReportParams, log: FastifyBaseLogger, serverOptions: S
     job.status = 'running';
     job.startedAt = new Date().toISOString();
     try {
-      const report = await produceReport(params, log, serverOptions, (entry) => job.progress?.push(entry));
+      const produced = await produceReport(params, log, serverOptions, (entry) => job.progress?.push(entry));
       job.status = 'done';
-      job.result = report;
-      writeCache(key, report);
+      job.result = produced.report;
+      job.saved = produced.saved;
+      if (produced.warnings.length > 0) job.warnings = produced.warnings;
+      if (!lostSave(params, produced)) writeCache(key, produced.report);
     } catch (error) {
       job.status = 'failed';
       job.error = toErrorPayload(error);
@@ -456,9 +474,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
       return reply.status(202).send({ jobId: job.id, status: job.status });
     }
 
-    const report = await produceReport(params, req.log, options);
-    writeCache(key, report);
-    return reply.send(report);
+    const produced = await produceReport(params, req.log, options);
+    if (!lostSave(params, produced)) writeCache(key, produced.report);
+    markUnsaved(reply, params, produced);
+    return reply.send(produced.report);
   };
 
   app.get('/report', reportHandler);
@@ -544,8 +563,10 @@ export function buildServer(options: ServerOptions): FastifyInstance {
 
     let report = body.force ? undefined : readCache(key);
     if (!report) {
-      report = await produceReport(params, req.log, options);
-      writeCache(key, report);
+      const produced = await produceReport(params, req.log, options);
+      report = produced.report;
+      if (!lostSave(params, produced)) writeCache(key, report);
+      markUnsaved(reply, params, produced);
     }
     return reply.send(insightsPayload(report, filterParams.parse(body.filters ?? {})));
   });

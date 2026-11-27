@@ -58,6 +58,11 @@ export interface RunnerResult {
   runs: NormalizedReport[];
   /** The median run's other categories. Empty when PSI returned only performance. */
   categories: ReportCategories;
+  /**
+   * Whether the report is stored. False with saving off, and when the store
+   * failed twice: the report is still returned, with a warning saying why.
+   */
+  saved: boolean;
   warnings: string[];
   dir?: string;
 }
@@ -216,9 +221,21 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   const reportCategories = (medianRun && categoriesByRun.get(medianRun.fetchTime)) ?? {};
 
   let dir: string | undefined;
+  let saved = false;
   if (save) {
-    const saved = await store.saveReport(aggregated, ordered);
-    dir = saved.location;
+    // The runs already spent PSI quota, so a failed save must not throw the report away.
+    // One retry covers a dropped connection; after that the report is returned unsaved.
+    try {
+      dir = (await saveWithRetry(() => store.saveReport(aggregated, ordered))).location;
+      saved = true;
+    } catch (error) {
+      runWarnings.push(
+        `Measured, but the report could not be saved: ${error instanceof Error ? error.message : String(error)}. ` +
+          'It is shown here only and is gone when the server restarts.',
+      );
+    }
+  }
+  if (saved) {
     // The report is stored by now, so a failure here must not throw away a measurement that spent quota.
     if (Object.keys(reportCategories).length > 0) {
       try {
@@ -231,9 +248,24 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
     }
   }
 
-  const result: RunnerResult = { report: aggregated, runs: ordered, categories: reportCategories, warnings: runWarnings };
+  const result: RunnerResult = {
+    report: aggregated,
+    runs: ordered,
+    categories: reportCategories,
+    saved,
+    warnings: runWarnings,
+  };
   if (dir) result.dir = dir;
   return result;
+}
+
+/** A store write, tried once more if it fails. */
+async function saveWithRetry<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch {
+    return write();
+  }
 }
 
 export function isPsiError(error: unknown): error is PsiError {

@@ -49,6 +49,9 @@ export interface Job {
   request: { url: string; strategy: Strategy; runs: number; stat: Stat };
   progress?: JobProgress[];
   save?: boolean;
+  /** Once done: false when the report could not be stored, even with saving on. */
+  saved?: boolean;
+  warnings?: string[];
   error?: { code: string; message: string };
   result?: {
     reportId: string;

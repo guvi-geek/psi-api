@@ -44,7 +44,7 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
           }
           // A saved report opens by itself. Replacing this page in the history means Back
           // goes to where the run was started, not to a finished run that would open it again.
-          if (next.status === 'done' && next.save !== false && next.result) {
+          if (next.status === 'done' && next.save !== false && next.saved !== false && next.result) {
             location.replace(href.report(next.result.reportId));
           }
           return;
@@ -94,7 +94,8 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
   const running = job.status === 'running' || job.status === 'queued';
   // Every run is in, but the server is still aggregating and saving; then the report opens.
   const building = running && finished >= request.runs;
-  const opening = job.status === 'done' && job.save !== false && Boolean(job.result);
+  const stored = job.save !== false && job.saved !== false;
+  const opening = job.status === 'done' && stored && Boolean(job.result);
 
   return (
     <section className="page">
@@ -129,7 +130,7 @@ export function RunView({ jobId, onFinished }: { jobId: string; onFinished: () =
       )}
       {trouble && running && <p className="form-error">Lost contact with the server: {trouble} Retrying.</p>}
 
-      {job.status === 'done' && job.result && job.save === false && <UnsavedResult job={job} />}
+      {job.status === 'done' && job.result && !stored && <UnsavedResult job={job} />}
       {job.status === 'failed' && <RunFailure job={job} />}
     </section>
   );
@@ -160,7 +161,7 @@ function RunSlot({ slot }: { slot: Slot }) {
   );
 }
 
-/** A run measured with saving off: there is no report to open, so its result is shown here. */
+/** A run with no stored report (saving off, or the save failed): its result is shown here. */
 function UnsavedResult({ job }: { job: Job }) {
   const result = job.result!;
   const gaps = result.targets?.gaps ?? [];
@@ -177,7 +178,14 @@ function UnsavedResult({ job }: { job: Job }) {
           {result.runsSucceeded} of {result.runsRequested} runs succeeded.{' '}
           {gaps.length > 0 && `${failing} of ${gaps.length} targets failing.`}
         </p>
-        <p className="muted">Not saved, so there is no report to open. This result is gone when the server restarts.</p>
+        {job.save === false ? (
+          <p className="muted">Not saved, so there is no report to open. This result is gone when the server restarts.</p>
+        ) : (
+          <p className="note-warn" role="alert">
+            {job.warnings?.find((warning) => warning.startsWith('Measured, but')) ??
+              'Measured, but the report could not be saved. It is shown here only and is gone when the server restarts.'}
+          </p>
+        )}
       </div>
     </div>
   );
