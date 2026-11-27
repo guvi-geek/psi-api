@@ -8,6 +8,8 @@ import type { NetworkRequest } from '../src/types.js';
 import {
   countOfType,
   DEFAULT_REQUESTS,
+  pageOf,
+  PAGE_SIZE,
   requestRows,
   requestsFromParams,
   requestsToParams,
@@ -108,5 +110,23 @@ describe('requests', () => {
     const untyped = [{ url: 'https://site.test/beacon', resourceType: '', transferSize: 0, party: 'first' }] as NetworkRequest[];
     expect(requestRows(untyped, DEFAULT_REQUESTS).rows[0]!.type).toBe('Other');
     expect(requestRows(untyped, { ...DEFAULT_REQUESTS, types: ['Other'] }).rows).toHaveLength(1);
+  });
+});
+
+describe('paging the request table', () => {
+  it('shows 20 rows a page and clamps the page into range', () => {
+    expect(PAGE_SIZE).toBe(20);
+    expect(pageOf(217, 1)).toEqual({ page: 1, pages: 11, start: 0, end: 20 });
+    expect(pageOf(217, 2)).toEqual({ page: 2, pages: 11, start: 20, end: 40 });
+    expect(pageOf(217, 11)).toEqual({ page: 11, pages: 11, start: 200, end: 217 });
+    expect(pageOf(217, 99)).toEqual({ page: 11, pages: 11, start: 200, end: 217 });
+    expect(pageOf(217, 0)).toEqual({ page: 1, pages: 11, start: 0, end: 20 });
+    expect(pageOf(217, Number.NaN)).toEqual({ page: 1, pages: 11, start: 0, end: 20 });
+  });
+
+  it('has one page for a short or empty table', () => {
+    expect(pageOf(5, 1)).toEqual({ page: 1, pages: 1, start: 0, end: 5 });
+    expect(pageOf(20, 2)).toEqual({ page: 1, pages: 1, start: 0, end: 20 });
+    expect(pageOf(0, 3)).toEqual({ page: 1, pages: 1, start: 0, end: 0 });
   });
 });

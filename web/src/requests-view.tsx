@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import { href } from './router';
 import {
+  pageOf,
   requestRows,
   requestsFromParams,
   requestsToParams,
@@ -14,15 +15,18 @@ import {
 
 /** The CLI's --requests: every request the median run made. */
 export function RequestsView({ report, params }: { report: AggregatedReport; params: URLSearchParams }) {
-  const [filters, setFilters] = useState<RequestFilters>(() => requestsFromParams(params));
-  const [limitText, setLimitText] = useState(filters.limit === undefined ? '' : String(filters.limit));
+  // Paging replaces a row limit, so an old link's limit is ignored.
+  const [filters, setFilters] = useState<RequestFilters>(() => ({ ...requestsFromParams(params), limit: undefined }));
+  const [page, setPage] = useState(() => Number(params.get('page') ?? 1));
   const ids = useId();
+  const tableRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const next = requestsToParams(filters);
     next.set('tab', 'requests');
+    if (page > 1) next.set('page', String(page));
     history.replaceState(null, '', href.report(report.reportId, next));
-  }, [filters, report.reportId]);
+  }, [filters, page, report.reportId]);
 
   const requests = report.requests ?? [];
   if (requests.length === 0) {
@@ -36,13 +40,27 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   }
 
   const totals = requestTotals(requests);
-  const { rows, matched } = requestRows(requests, filters);
-  const update = (patch: Partial<RequestFilters>) => setFilters((current) => ({ ...current, ...patch }));
-  const toggleType = (type: string) =>
+  const { rows: allRows, matched } = requestRows(requests, filters);
+  const shown = pageOf(matched, page);
+  const rows = allRows.slice(shown.start, shown.end);
+  // A new page starts from its first row: bring the table top back into view if it has scrolled away.
+  const goTo = (next: number) => {
+    setPage(next);
+    const top = tableRef.current?.getBoundingClientRect().top ?? 0;
+    if (top < 0) tableRef.current?.scrollIntoView({ block: 'start' });
+  };
+  // A new filter or order starts again at the first page.
+  const update = (patch: Partial<RequestFilters>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setPage(1);
+  };
+  const toggleType = (type: string) => {
+    setPage(1);
     setFilters((current) => ({
       ...current,
       types: (current.types ?? []).includes(type) ? (current.types ?? []).filter((entry) => entry !== type) : [...(current.types ?? []), type],
     }));
+  };
 
   return (
     <div className="stack">
@@ -93,25 +111,6 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
               </label>
             ))}
           </div>
-          <label className="sort-field">
-            <span className="filter-label">Show at most</span>
-            <input
-              className="input small-number"
-              type="number"
-              min={0}
-              step={1}
-              value={limitText}
-              aria-label="Show at most this many requests"
-              aria-invalid={limitText.trim() !== '' && !(Number.isInteger(Number(limitText)) && Number(limitText) >= 0)}
-              onChange={(event) => {
-                setLimitText(event.target.value);
-                const raw = event.target.value.trim();
-                const value = Number(raw);
-                if (raw === '') update({ limit: undefined });
-                else if (Number.isInteger(value) && value >= 0) update({ limit: value });
-              }}
-            />
-          </label>
         </div>
 
         {/* Types in the report, biggest first; pick any to show only those. */}
@@ -136,7 +135,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
         </div>
       </div>
 
-      <div className="panel table-panel">
+      <div className="panel table-panel" ref={tableRef}>
         <div className="table-scroll">
           <table className="table requests-table">
             <thead>
@@ -176,11 +175,35 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
             </tbody>
           </table>
         </div>
+        {matched > 0 && (
+          <nav className="pager" aria-label="Request pages">
+            <span className="pager-status" aria-live="polite">
+              Showing {shown.start + 1}–{shown.end} of {matched} request{matched === 1 ? '' : 's'}
+            </span>
+            {shown.pages > 1 && (
+              <span className="pager-controls">
+                <button type="button" className="button button-quiet" onClick={() => goTo(shown.page - 1)} disabled={shown.page === 1}>
+                  Previous
+                </button>
+                <span className="pager-page">
+                  Page {shown.page} of {shown.pages}
+                </span>
+                <button
+                  type="button"
+                  className="button button-quiet"
+                  onClick={() => goTo(shown.page + 1)}
+                  disabled={shown.page === shown.pages}
+                >
+                  Next
+                </button>
+              </span>
+            )}
+          </nav>
+        )}
       </div>
 
       <p className="note">
         {matched === 0 ? 'No request matches these filters. ' : ''}
-        {matched > rows.length ? `${matched - rows.length} more hidden by Show at most. ` : ''}
         Start and End are milliseconds after the first request, observed on PSI&apos;s own connection. Use them for order,
         not to compare with FCP or LCP, which are simulated on a throttled link. Hover a size for the uncompressed size.
       </p>

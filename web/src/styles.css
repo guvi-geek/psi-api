@@ -1430,9 +1430,6 @@ a.tab:hover {
   gap: 16px;
 }
 
-.small-number {
-  width: 84px;
-}
 
 /* ---------- requests ---------- */
 
@@ -1474,6 +1471,32 @@ a.tab:hover {
   margin-left: 2px;
   font-size: 12px;
   color: var(--muted);
+}
+
+/* Under the request table: the rows shown, then previous / next. */
+.pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 4px 0;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+.pager-status,
+.pager-page {
+  font-size: 13px;
+  color: var(--muted);
+}
+.pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.pager .button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .request-totals {

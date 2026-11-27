@@ -140,3 +140,19 @@ export function requestTotals(requests: NetworkRequest[]): RequestTotals {
       .map(([type, entry]) => ({ type, count: entry.count, bytes: formatBytes(entry.bytes), label: countOfType(entry.count, type) })),
   };
 }
+
+/* --------------------------------- paging --------------------------------- */
+
+/** Rows per page in the request table. */
+export const PAGE_SIZE = 20;
+
+/**
+ * Which rows one page shows. `page` is 1-based and clamped into range, so a
+ * page number left over from a wider filter lands on the last real page.
+ */
+export function pageOf(total: number, page: number, size = PAGE_SIZE): { page: number; pages: number; start: number; end: number } {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const current = Math.min(Math.max(1, Math.floor(page) || 1), pages);
+  const start = total === 0 ? 0 : (current - 1) * size;
+  return { page: current, pages, start, end: Math.min(start + size, total) };
+}
