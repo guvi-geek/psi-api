@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -27,14 +28,20 @@ export function dataDirForHost(url: string, dataDir = getDataDir()): string {
   return path.join(dataDir, hostname.replace(/[^a-zA-Z0-9._-]/g, '_'));
 }
 
-/** `data/<host>/<2026-09-29T10-30-00Z>-mobile` - sortable and filesystem safe. */
+/**
+ * `2026-09-29T10-30-00Z-mobile-3fa9c1`: the finish time first, so ids sort newest
+ * first, then the device and 6 random hex characters. Without them, two reports
+ * finishing in the same second got one id, and in the shared MongoDB the second
+ * overwrote the first. Ids from before the suffix are still read everywhere.
+ */
 export function makeReportId(
   url: string,
   strategy: Strategy,
   date = new Date(),
+  suffix = randomBytes(3).toString('hex'),
 ): string {
   const iso = date.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/:/g, '-');
-  return `${iso}-${strategy}`;
+  return `${iso}-${strategy}-${suffix}`;
 }
 
 function assertReportId(reportId: string): void {

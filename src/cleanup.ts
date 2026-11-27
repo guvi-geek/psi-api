@@ -15,7 +15,8 @@ import { getDataDir } from './storage.js';
 export const CLEANUP_MAX_AGE_DAYS = 3;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const REPORT_ID = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z-(?:mobile|desktop)$/;
+// The random suffix is optional: ids made before it was added stay valid.
+const REPORT_ID = /^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})Z-(?:mobile|desktop)(?:-[0-9a-f]{6})?$/;
 
 /** When a report was measured, read from its id. Null for anything that is not a report id. */
 export function reportIdTime(reportId: string): Date | null {

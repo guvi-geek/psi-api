@@ -164,7 +164,10 @@ describe('runReport', () => {
   it('generates a sortable report id', async () => {
     const { impl } = flakyFetch(1, 1, () => 50);
     const result = await runReport({ url: 'https://example.com/', runs: 1, save: false, fetchImpl: impl, sleepImpl: noSleep, targets });
-    expect(result.report.reportId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-mobile$/);
+    expect(result.report.reportId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-mobile-[0-9a-f]{6}$/);
+    // Two reports of the same second still get different ids.
+    const again = await runReport({ url: 'https://example.com/', runs: 1, save: false, fetchImpl: flakyFetch(1, 1, () => 50).impl, sleepImpl: noSleep, targets });
+    expect(again.report.reportId).not.toBe(result.report.reportId);
   });
 });
 

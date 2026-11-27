@@ -37,6 +37,8 @@ describe('reportIdTime', () => {
   it('reads the time in a report id and refuses anything else', () => {
     expect(reportIdTime('2026-11-26T06-49-55Z-mobile')?.toISOString()).toBe('2026-11-26T06:49:55.000Z');
     expect(reportIdTime('2026-11-26T06-49-55Z-desktop')).not.toBeNull();
+    // New ids carry a random suffix; old ones without it are read the same.
+    expect(reportIdTime('2026-11-26T06-49-55Z-mobile-3fa9c1')?.toISOString()).toBe('2026-11-26T06:49:55.000Z');
     for (const name of ['seo', 'optimization-log.md', 'stray', '2026-11-26T06-49-55Z', '2026-11-26T06-49-55Z-mobile-seo', '2026-13-40T99-99-99Z-mobile']) {
       expect(reportIdTime(name)).toBeNull();
     }

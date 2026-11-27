@@ -326,7 +326,7 @@ describe('the category views and the --seoId / --seoList paths', () => {
     }
     const text = out.join('');
     const reportId = reportIdIn(text);
-    expect(reportId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-desktop$/);
+    expect(reportId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-desktop-[0-9a-f]{6}$/);
     expect(text).toContain(`SEO  ${URL_}`);
     expect(text).toContain(`UTC · ${reportId}`);
     expect(text).toContain('SCORE    100 / 100');

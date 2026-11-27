@@ -34,8 +34,13 @@ describe('storage', () => {
   });
 
   it('builds a filesystem safe report id', () => {
-    const id = makeReportId('https://example.com/', 'desktop', new Date('2026-09-29T10:30:00Z'));
-    expect(id).toBe('2026-09-29T10-30-00Z-desktop');
+    const id = makeReportId('https://example.com/', 'desktop', new Date('2026-09-29T10:30:00Z'), '3fa9c1');
+    expect(id).toBe('2026-09-29T10-30-00Z-desktop-3fa9c1');
+    // The suffix is random by default: the same second and device still give two ids.
+    const date = new Date('2026-09-29T10:30:00Z');
+    const ids = new Set(Array.from({ length: 50 }, () => makeReportId('https://example.com/', 'mobile', date)));
+    expect(ids.size).toBe(50);
+    for (const each of ids) expect(each).toMatch(/^2026-09-29T10-30-00Z-mobile-[0-9a-f]{6}$/);
   });
 
   it('sanitises a hostile hostname', () => {
