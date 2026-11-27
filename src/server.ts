@@ -25,7 +25,7 @@ import { diagnose } from './diagnose.js';
 import { imagesOf } from './images.js';
 import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
 import { UrlValidationError, validateTargetUrl } from './psiClient.js';
-import { getDataDir, listReports, loadReport, loadRuns, saveReport } from './storage.js';
+import { getDataDir, listReports, loadCategories, loadReport, loadRuns, saveReport } from './storage.js';
 import { isSeoId, runSeoCheck, type SeoCheck } from './seo.js';
 import { listSeoChecks, loadSeoCheck, saveSeoCheck } from './seo-storage.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
@@ -480,6 +480,18 @@ export function buildServer(options: ServerOptions = {}): FastifyInstance {
         .send({ error: { code: 'NOT_FOUND', message: `no stored report "${req.params.reportId}"` } });
     }
     return reply.send(report);
+  });
+
+  // The report's other categories (accessibility, best practices, SEO, agentic browsing),
+  // read in the same PSI calls. Free. `null` for a report measured before runs read them.
+  app.get<{ Params: { reportId: string } }>('/report/:reportId/categories', async (req, reply) => {
+    const report = await findReport(req.params.reportId);
+    if (!report) {
+      return reply
+        .status(404)
+        .send({ error: { code: 'NOT_FOUND', message: `no stored report "${req.params.reportId}"` } });
+    }
+    return reply.send({ reportId: report.reportId, categories: await loadCategories(report.reportId) });
   });
 
   app.get<{ Params: { reportId: string }; Querystring: Record<string, unknown> }>(
