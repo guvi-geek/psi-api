@@ -5,12 +5,13 @@ import type {
   Stat,
   Strategy,
 } from './types.js';
-import { aggregateReports, MIN_SUCCESS_RATIO } from './aggregate.js';
+import { aggregateReports, medianRunOf, MIN_SUCCESS_RATIO } from './aggregate.js';
+import { categoriesOf, performanceView, PSI_CATEGORIES, type ReportCategories } from './categories.js';
 import { normalizeReport } from './insights.js';
 import { PsiError, runPsiCall, validateTargetUrl, type RetryInfo } from './psiClient.js';
 import { isPageNotFound, isUnreachableMessage } from './validity.js';
 import { applyTargets, loadTargets, type Targets } from './targets.js';
-import { makeReportId, saveReport } from './storage.js';
+import { makeReportId, saveCategories, saveReport } from './storage.js';
 
 export const MAX_RUNS = 40;
 export const DEFAULT_RUNS = 10;
@@ -52,6 +53,8 @@ export interface RunnerOptions {
 export interface RunnerResult {
   report: AggregatedReport;
   runs: NormalizedReport[];
+  /** The median run's other categories. Empty when PSI returned only performance. */
+  categories: ReportCategories;
   warnings: string[];
   dir?: string;
 }
@@ -88,7 +91,8 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
     strategy = 'mobile',
     runs = DEFAULT_RUNS,
     stat = 'median',
-    categories = ['performance'],
+    // Every category in the one call: performance is graded, the rest are read for free.
+    categories = PSI_CATEGORIES,
     apiKey = process.env.PSI_API_KEY,
     concurrency = resolveConcurrency(),
     save = true,
@@ -103,6 +107,8 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
   const { url: validatedUrl, warnings } = validateTargetUrl(url);
 
   const reports: Array<{ runNumber: number; report: NormalizedReport }> = [];
+  // Each kept run's other categories, by its Lighthouse fetchTime.
+  const categoriesByRun = new Map<string, ReportCategories>();
   const failures: RunFailure[] = [];
   // PSI caches per URL. Two responses with the same Lighthouse fetchTime are one
   // measurement, and the second must not be counted as another sample.
@@ -122,7 +128,8 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
           onRetry,
           signal,
         });
-        const normalized = normalizeReport(result.raw, validatedUrl, strategy);
+        // The report is built from what a performance-only call returns, so it is unchanged.
+        const normalized = normalizeReport(performanceView(result.raw), validatedUrl, strategy);
         if (acceptedStamps.has(normalized.fetchTime)) {
           if (attempt === CACHE_ATTEMPTS_PER_RUN) {
             const message = 'PSI served a cached report';
@@ -135,6 +142,7 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
         }
         acceptedStamps.add(normalized.fetchTime);
         reports.push({ runNumber, report: normalized });
+        categoriesByRun.set(normalized.fetchTime, categoriesOf(result.raw, { url: validatedUrl, strategy }));
         onRunFinished?.({ run: runNumber, ok: true, score: normalized.score });
         return;
       } catch (error) {
@@ -199,13 +207,18 @@ export async function runReport(options: RunnerOptions): Promise<RunnerResult> {
     const why = first ? 'the page returned 404 Not Found' : (firstFailure ?? 'the host could not be fetched');
     runWarnings.push(`Stopped after the first run: ${why}. The remaining PSI calls were not sent.`);
   }
+  // The run the report describes (its environment, requests, LCP element) is the one whose categories it keeps.
+  const medianRun = medianRunOf(ordered, aggregated.score.median);
+  const reportCategories = (medianRun && categoriesByRun.get(medianRun.fetchTime)) ?? {};
+
   let dir: string | undefined;
   if (save) {
     const saved = await saveReport(aggregated, ordered, dataDir);
     dir = saved.dir;
+    if (Object.keys(reportCategories).length > 0) await saveCategories(aggregated, reportCategories, dataDir);
   }
 
-  const result: RunnerResult = { report: aggregated, runs: ordered, warnings: runWarnings };
+  const result: RunnerResult = { report: aggregated, runs: ordered, categories: reportCategories, warnings: runWarnings };
   if (dir) result.dir = dir;
   return result;
 }

@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import type { AggregatedReport, NormalizedReport, Strategy } from './types.js';
+import type { ReportCategories } from './categories.js';
 import { validateTargetUrl } from './psiClient.js';
 
 const DEFAULT_DATA_DIR = path.resolve(
@@ -72,6 +73,40 @@ export async function saveReport(
   await writeFile(path.join(dir, 'runs.json'), `${JSON.stringify(runs, null, 2)}\n`, 'utf8');
 
   return { reportId: report.reportId, dir };
+}
+
+/**
+ * The median run's other categories (accessibility, best practices, SEO,
+ * agentic browsing), beside its report. A separate file, so report.json, and
+ * everything that reads it, is exactly what it was.
+ */
+export async function saveCategories(
+  report: Pick<AggregatedReport, 'reportId' | 'url'>,
+  categories: ReportCategories,
+  dataDir = getDataDir(),
+): Promise<void> {
+  const dir = reportDir(report.reportId, validateTargetUrl(report.url).url, dataDir);
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, 'categories.json'), `${JSON.stringify(categories, null, 2)}\n`, 'utf8');
+}
+
+/** A report's other categories, or null for a report measured before runs read them. */
+export async function loadCategories(reportId: string, dataDir = getDataDir()): Promise<ReportCategories | null> {
+  assertReportId(reportId);
+  let hosts: string[];
+  try {
+    hosts = (await readdir(dataDir, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+  } catch {
+    return null;
+  }
+  for (const host of hosts) {
+    try {
+      return JSON.parse(await readFile(path.join(dataDir, host, reportId, 'categories.json'), 'utf8')) as ReportCategories;
+    } catch {
+      /* not here, keep looking */
+    }
+  }
+  return null;
 }
 
 export async function loadReport(

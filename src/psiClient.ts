@@ -217,11 +217,9 @@ export async function runPsiCall(options: PsiCallOptions): Promise<PsiCallResult
   const startedAt = Date.now();
   // Keep the report/target free of the nonce; only the wire request carries it.
   const requestedUrl = cacheBust ? withCacheBust(url, cacheBustIdImpl()) : url;
-  const params = new URLSearchParams({
-    url: requestedUrl,
-    strategy,
-    category: categories.join(','),
-  });
+  const params = new URLSearchParams({ url: requestedUrl, strategy });
+  // One `category` parameter per category, as the API documents. A single category is the same URL as before.
+  for (const category of categories) params.append('category', category);
   if (apiKey) params.set('key', apiKey);
 
   const endpoint = `${PSI_ENDPOINT}?${params.toString()}`;

@@ -402,7 +402,7 @@ function accumulateInsights(reports: NormalizedReport[]): Map<string, InsightAcc
  * measurement environment - has to come from this same run, or it risks
  * describing a run the reader is not looking at.
  */
-function medianRunOf(reports: NormalizedReport[], medianScore: number): NormalizedReport | undefined {
+export function medianRunOf(reports: NormalizedReport[], medianScore: number): NormalizedReport | undefined {
   return [...reports].sort(
     (a, b) =>
       Math.abs(a.score - medianScore) - Math.abs(b.score - medianScore) ||

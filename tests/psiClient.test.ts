@@ -109,7 +109,8 @@ describe('runPsiCall', () => {
     expect(parsed.origin + parsed.pathname).toBe('https://www.googleapis.com/pagespeedonline/v5/runPagespeed');
     expect(parsed.searchParams.get('url')).toBe('https://example.com/?psi_nonce=testnonce');
     expect(parsed.searchParams.get('strategy')).toBe('desktop');
-    expect(parsed.searchParams.get('category')).toBe('performance,accessibility');
+    // One parameter per category, as the API documents.
+    expect(parsed.searchParams.getAll('category')).toEqual(['performance', 'accessibility']);
     expect(parsed.searchParams.get('key')).toBe('KEY123');
   });
 

@@ -235,16 +235,37 @@ export function toTable(details: unknown): SeoTable | null {
 const zeroCounts = (): SeoCounts => ({ failed: 0, passed: 0, manual: 0, notApplicable: 0, error: 0 });
 
 /**
+ * One Lighthouse category of a run (accessibility, best-practices, seo,
+ * agentic-browsing), as the PSI website shows it. The same shape as an
+ * SeoCheck, without the id of a separately saved check.
+ */
+export type CategoryCheck = Omit<SeoCheck, 'seoId'>;
+
+/**
  * A raw PSI response (requested with category=seo) to an SeoCheck.
  * Throws when the response has no SEO category, as normalize does for performance.
  */
 export function normalizeSeo(raw: unknown, options: { url: string; strategy: Strategy; seoId: string }): SeoCheck {
+  return { seoId: options.seoId, ...normalizeCategory(raw, 'seo', options) };
+}
+
+/**
+ * Any category of a raw PSI response, in the website's terms: score, audits by
+ * group, manual checks, passed, not applicable. Audits in Lighthouse's
+ * `hidden` group are left out, as the website leaves them out.
+ * Throws when the response does not have that category.
+ */
+export function normalizeCategory(
+  raw: unknown,
+  categoryId: string,
+  options: { url: string; strategy: Strategy },
+): CategoryCheck {
   const body = isObject(raw) ? raw : {};
   const result = isObject(body.lighthouseResult) ? body.lighthouseResult : null;
   if (!result) throw new Error('PSI response contained no lighthouseResult');
   const categories = isObject(result.categories) ? result.categories : {};
-  const seo = isObject(categories.seo) ? categories.seo : null;
-  if (!seo) throw new Error('PSI response contained no seo category (did you request category=seo?)');
+  const seo = isObject(categories[categoryId]) ? (categories[categoryId] as Raw) : null;
+  if (!seo) throw new Error(`PSI response contained no ${categoryId} category (did you request category=${categoryId}?)`);
 
   const audits = isObject(result.audits) ? result.audits : {};
   const refs = Array.isArray(seo.auditRefs) ? seo.auditRefs.filter(isObject) : [];
@@ -257,6 +278,7 @@ export function normalizeSeo(raw: unknown, options: { url: string; strategy: Str
     const audit = isObject(audits[id]) ? (audits[id] as Raw) : null;
     if (!id || !audit) continue;
     const group = str(ref.group) || null;
+    if (group === 'hidden') continue;
     if (group && !groupIds.includes(group)) groupIds.push(group);
     const mode = str(audit.scoreDisplayMode);
     const score = typeof audit.score === 'number' ? audit.score : null;
@@ -289,14 +311,13 @@ export function normalizeSeo(raw: unknown, options: { url: string; strategy: Str
   const environment = isObject(result.environment) ? result.environment : {};
   const categoryScore = typeof seo.score === 'number' ? Math.round(seo.score * 100) : null;
   return {
-    seoId: options.seoId,
     url: options.url,
     finalUrl: clean(result.finalDisplayedUrl) || clean(result.finalUrl) || options.url,
     strategy: options.strategy,
     fetchedAt: str(result.fetchTime),
     lighthouseVersion: str(result.lighthouseVersion),
     score: categoryScore,
-    title: str(seo.title) || 'SEO',
+    title: str(seo.title) || categoryId,
     description: str(seo.description),
     manualDescription: str(seo.manualDescription),
     groups,
@@ -311,7 +332,7 @@ export function normalizeSeo(raw: unknown, options: { url: string; strategy: Str
 }
 
 /** The check in the website's order, empty sections left out. */
-export function seoSections(check: SeoCheck): SeoSection[] {
+export function seoSections(check: CategoryCheck): SeoSection[] {
   const sections: SeoSection[] = [];
   const of = (state: SeoAuditState) => check.audits.filter((audit) => audit.state === state);
   const errors = of('error');
