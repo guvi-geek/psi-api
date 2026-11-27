@@ -2,7 +2,7 @@
 
 Measure a public page with the [Google PageSpeed Insights](https://developers.google.com/speed/docs/insights/v5/get-started) (PSI) API, from the terminal or from a web UI.
 
-One PSI run is noisy. A report runs the page **10 times on mobile** by default, then shows the median, the range, and which targets the page misses. Desktop is the same command with `--desktop`; the number of runs is `--runs`. A separate SEO check reads the page's SEO with one PSI call.
+One PSI run is noisy. A report runs the page **10 times on mobile** by default, then shows the median, the range, and which targets the page misses. Desktop is the same command with `--desktop`; the number of runs is `--runs`. The same PSI calls also read the page's accessibility, best practices, SEO and agentic browsing, at no extra cost, and `--seo`, `--accessibility`, `--best-practices` or `--agentic` shows one of them instead of performance.
 
 ```bash
 npm run psi -- <page>     # measure in the terminal
@@ -19,7 +19,7 @@ The CLI, the web UI and the HTTP API share the same code and the same `data/` fo
 2. [Quick start](#quick-start): the commands you will use most
 3. [Web UI](#web-ui)
 4. [Measure a page](#measure-a-page): what a report looks like
-5. [CLI](#cli): every option, [reading the output](#reading-the-output), [listing and comparing reports](#listing-and-comparing-reports), [`--reanalyze`](#--reanalyze-rebuilding-stored-reports-for-free), [SEO check](#seo-check)
+5. [CLI](#cli): every option, [reading the output](#reading-the-output), [listing and comparing reports](#listing-and-comparing-reports), [`--reanalyze`](#--reanalyze-rebuilding-stored-reports-for-free), [SEO and more](#seo-and-more)
 6. [Aggregation](#aggregation): how runs become one report, [first-party vs third party](#first-party-vs-third-party), [insights](#insights)
 7. [Insight groups](#insight-groups)
 8. [Targets](#targets): lab targets and real-user (CrUX) targets
@@ -88,16 +88,17 @@ npm run psi -- https://example.com/ --desktop
 npm run psi -- https://example.com/ --runs 5
 npm run psi -- https://example.com/ --desktop --runs 15
 
-# SEO check: one PSI call, mobile or desktop
+# SEO and more: the same runs, showing one category instead of performance
 npm run psi -- https://example.com/ --seo
-npm run psi -- https://example.com/ --seo --desktop
+npm run psi -- https://example.com/ --accessibility --runs 1
+npm run psi -- https://example.com/ --best-practices --desktop
+npm run psi -- https://example.com/ --agentic
 
 # Read what you already measured - free, no PSI calls
 npm run psi -- --list                                  # saved reports, newest first
 npm run psi -- --reportId <reportId>                   # one report again
 npm run psi -- --reportId <reportId> --diagnose        # its ranked work queue
-npm run psi -- --seoList                               # saved SEO checks
-npm run psi -- --seoId <seoId>                         # one SEO check again
+npm run psi -- --reportId <reportId> --seo             # its SEO (or --accessibility, ...)
 ```
 
 | You want | Command | PSI calls |
@@ -107,8 +108,8 @@ npm run psi -- --seoId <seoId>                         # one SEO check again
 | Desktop, 10 runs | `npm run psi -- <page> --desktop` | 10 |
 | Mobile, N runs | `npm run psi -- <page> --runs <n>` | N |
 | Desktop, N runs | `npm run psi -- <page> --desktop --runs <n>` | N |
-| SEO, mobile | `npm run psi -- <page> --seo` | 1 |
-| SEO, desktop | `npm run psi -- <page> --seo --desktop` | 1 |
+| SEO, accessibility, best practices or agentic browsing | `npm run psi -- <page> --seo` (or `--accessibility`, `--best-practices`, `--agentic`) | same as the runs; `--runs 1` is enough |
+| A category of a saved report | `npm run psi -- --reportId <id> --seo` | 0 |
 | A saved report | `npm run psi -- --reportId <id>` | 0 |
 
 ---
@@ -128,7 +129,7 @@ A dark web UI for everything the CLI does. It is a static Next.js export in `web
   - **Overview:** score, verdict and failing targets in one panel; every metric against its target with a bar and runs in target; real-user (CrUX) p75 values in the same order; how it was measured; every statistic side by side. **Re-analyze** measures the page again with the report's own settings, as a new report.
   - **Findings:** every Lighthouse finding with search, whose cost it is (anyone, ours, third party), hide flaky, and sort. Selecting one opens a drawer with its description, facts, per-run stats and rows, as `--items` prints them.
   - **Requests:** every request the median run made, summarised per type ("40 Images - 683KB"), filtered by party, request type, order and count.
-  - **SEO:** the latest [SEO check](#seo-check) of the page and device, or a **Check SEO** button (1 PSI call). Failed audits come first with their details, then manual checks, passed and not applicable.
+  - **SEO and more:** accessibility, best practices, SEO and agentic browsing, read in the same PSI calls as the report, as four scores. Choosing one shows its audits: failed ones first with their details, then manual checks, passed and not applicable. No extra PSI call.
 
 The UI never recomputes what the server or the CLI's own code works out, so it shows the same numbers the CLI prints.
 
@@ -241,9 +242,12 @@ npm run psi -- <page> --desktop --runs <n>    # desktop, n runs
 | `--noFlaky` | — | Hide insights seen in <30% of runs. |
 | `--json` | off | Machine-readable output, and a **superset** of the text view — see [What the text view does not show](#what-the-text-view-does-not-show). |
 | `--no-save` | off | Don't write to `data/`. |
-| `--seo` | off | Check the page's SEO with one PSI call. See [SEO check](#seo-check). |
-| `--seoId <id>` | — | Re-read a **saved** SEO check. Costs no quota and runs no PSI calls. |
-| `--seoList` | off | List saved SEO checks, newest first. |
+| `--seo` | off | Show the report's SEO instead of its performance. With a page it measures as usual; with `--reportId` it is free. See [SEO and more](#seo-and-more). |
+| `--accessibility` | off | Show its accessibility instead. |
+| `--best-practices` | off | Show its best practices instead. |
+| `--agentic` | off | Show its agentic browsing instead. |
+| `--seoId <id>` | — | Re-read an SEO check saved by an older version. Free. |
+| `--seoList` | off | List those saved SEO checks, newest first. Free. |
 
 ```bash
 npm run psi -- https://example.com
@@ -475,69 +479,70 @@ A rebuild only ever *fills in* a missing savings figure. A figure Lighthouse alr
 
 Exit code is `0` on success, `1` on error — so `npm run --silent psi -- <url> --runs 3 || echo "failed"` works in a script.
 
-### SEO check
+### SEO and more
 
-`--seo` checks one page's SEO. It makes **one** PSI call with `category=seo`, separate from the performance runs, and it does not touch any performance report or its numbers. One call is enough because SEO audits read the page's HTML, links, `robots.txt` and headers. Those don't vary from run to run the way timings do.
+Every run asks PSI for all of its categories in the same call: performance, accessibility, best practices, SEO and agentic browsing. **That costs no extra PSI calls.** The performance report is built exactly as before. Its scores, findings and `--json` don't change, and the "performance only" line still holds, because the report scores performance. The other four categories, from the report's median run (the same run its request table and environment come from), are saved beside it as `categories.json`.
+
+One option per category shows it instead of performance:
+
+| Option | Shows |
+| --- | --- |
+| `--seo` | SEO: whether search engines can crawl and index the page, and whether its title, description, links and images are written for them. |
+| `--accessibility` | Accessibility: names and labels, contrast, ARIA, navigation, tables and lists, language. |
+| `--best-practices` | Best practices: trust and safety, user experience, browser compatibility. |
+| `--agentic` | Agentic browsing: whether an AI agent can read and use the page (accessibility tree, `llms.txt`, WebMCP). |
 
 ```bash
-npm run psi -- https://example.com --seo                   # mobile, 1 PSI call
-npm run psi -- https://example.com --seo --desktop         # desktop
-npm run psi -- https://example.com --seo --no-save         # check, don't write to data/
-npm run psi -- https://example.com --seo --json            # the whole check as JSON
+# measure as usual, then show one category instead of performance
+npm run psi -- https://example.com --seo                      # 10 runs, mobile
+npm run psi -- https://example.com --accessibility --runs 1   # one run is enough for these
+npm run psi -- https://example.com --best-practices --desktop
+npm run psi -- https://example.com --agentic --json           # the category as JSON
 
-# re-read a saved check - free, no PSI calls
-npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo
-npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo --json
-
-# list saved checks, newest first
-npm run psi -- --seoList
-npm run psi -- --seoList --json                            # { "checks": [...] }
+# read it from a report you already measured - free, no PSI calls
+npm run psi -- --reportId <reportId> --seo
+npm run psi -- --reportId <reportId> --accessibility --json
 ```
 
-`--seo` honours `--desktop`, `--mobile`, `--strategy`, `--no-save` and `--json`, and saves by default. `--seoId` and `--seoList` read from `data/` and take `--json`. The three modes can't be combined with each other, or with `--reportId`, `--list`, `--compare`, `--reanalyze`, `--diagnose`, `--requests`, `--items` or the insight filters.
+With a page, these measure exactly as the plain command does (`--runs`, `--desktop`, `--stat`, `--no-save` and `--json` all apply) and save the same report; only what is printed differs. One run is usually enough to read them, because these audits read the page's HTML, links, headers and `robots.txt`, which don't vary from run to run the way timings do. With `--reportId` they read the saved `categories.json` and cost nothing. A report measured before runs read every category has none, and says so.
 
-A check of a page where everything passes:
+A category of a real report:
 
 ```
-SEO  https://www.guvi.in/zen-class/
-mobile · Lighthouse 13.6.0 · 2026-11-26 12:23 UTC · 2026-11-26T12-23-19Z-mobile-seo
+BEST PRACTICES  https://www.guvi.in/zen-class/
+mobile · Lighthouse 13.6.0 · 2026-11-27 03:54 UTC · 2026-11-27T03-55-12Z-mobile
 
-SCORE    100 / 100   10 passed · 0 failed · 1 to check manually · 0 not applicable
+SCORE    96 / 100   18 passed · 1 failed · 0 to check manually · 2 not applicable
 
-ADDITIONAL ITEMS TO MANUALLY CHECK  1
-  ? structured-data    Structured data is valid
+USER EXPERIENCE  1 failed
+  ✗ image-size-responsive    Serves images with low resolution
+      node       URL                                      Displayed size  Actual size  Expected size
+      GUVI Logo  https://www.guvi.in/assets/CekzYjB8-hc…  150 x 31        162 x 34     225 x 47
 
-PASSED AUDITS  10
-  ✓ is-crawlable       Page isn’t blocked from indexing
-  ✓ document-title     Document has a `<title>` element
-  ✓ meta-description   Document has a meta description
-  ✓ http-status-code   Page has successful HTTP status code
-  ✓ link-text          Links have descriptive text
-  ✓ crawlable-anchors  Links are crawlable
-  ✓ robots-txt         robots.txt is valid
-  ✓ image-alt          Image elements have `[alt]` attributes
-  ✓ hreflang           Document has a valid `hreflang`
-  ✓ canonical          Document has a valid `rel=canonical`
-
-saved as seoId 2026-11-26T12-23-19Z-mobile-seo in data/www.guvi.in/seo/2026-11-26T12-23-19Z-mobile-seo.json
---seoId 2026-11-26T12-23-19Z-mobile-seo re-reads it for free (no PSI call)
+PASSED AUDITS  18
+  ✓ is-on-https              Uses HTTPS
+  ✓ geolocation-on-start     Avoids requesting the geolocation permission on page load
+  ...
 ```
 
-A failed audit is marked `✗` under its group, with its detail rows (the offending links, elements or lines) indented beneath it. An audit Lighthouse could not run is marked `!` with its error.
+The sections follow the order the PSI website uses:
 
-The text view starts with a header (page, device, Lighthouse version, when it was measured) and a SCORE line, 0–100, with the counts of failed, passed, manual and not-applicable audits. The sections follow in the order the PSI website uses:
-
-1. Audits that could not run, if any.
-2. Failed audits, under their group (for example "Crawling and Indexing" or "Content Best Practices"), each with its detail rows.
-3. "Additional items to manually check": audits Lighthouse can't decide and you must check yourself. They have no pass/fail score.
+1. Audits that could not run, if any, marked `!` with their error.
+2. Failed audits, `✗`, under their group (for example "Contrast" or "Crawling and Indexing"), each with its detail rows: the offending elements, links or lines.
+3. "Additional items to manually check": audits Lighthouse can't decide, which you must check yourself. They have no pass/fail score.
 4. "Passed audits".
 5. "Not applicable".
 
-`--seoList` prints the id, page, device, score and number of failed audits of each saved check. `--seo --json` and `--seoId --json` return the full check: score, audits (each `failed`, `passed`, `manual`, `notApplicable` or `error`), groups, counts and detail tables.
+Audits in Lighthouse's `hidden` group are left out, as the website leaves them out. `--json` returns `{ reportId, category, ...check }`: the score, every audit (`failed`, `passed`, `manual`, `notApplicable` or `error`) with its detail table, the groups and the counts. The web UI's **SEO and more** tab shows the same four categories, and [`GET /report/:reportId/categories`](#get-reportreportidcategories) returns them over HTTP.
 
-A check is saved as `data/<host>/seo/<seoId>.json`. `<seoId>` is `<ISO timestamp>-<strategy>-seo`, for example `2026-11-26T10-00-00Z-mobile-seo`. It is kept apart from performance reports, so it never appears among them.
+**Older SEO checks.** Before every run read all categories, `--seo` made its own single PSI call and saved the result as `data/<host>/seo/<seoId>.json`. Those checks stay readable, for free:
 
-This is the SEO category only. It is not Accessibility or Best Practices. The web UI's **SEO** tab shows the same check, and [`POST /seo`](#post-seo) runs it over HTTP.
+```bash
+npm run psi -- --seoList                                   # saved checks, newest first
+npm run psi -- --seoId 2026-11-26T10-00-00Z-mobile-seo     # one of them again
+```
+
+[`POST /seo`](#post-seo) still runs such a separate check over HTTP, for scripts that use it.
 
 ---
 
@@ -895,7 +900,9 @@ data/
 
 `<reportId>` is `<ISO timestamp>-<strategy>`, which sorts chronologically. `data/` and `.env` are gitignored.
 
-[SEO checks](#seo-check) are stored beside the reports, in a `seo/` folder of the same host directory:
+A report measured since every run read all categories also has `categories.json` beside `report.json`: the median run's accessibility, best practices, SEO and agentic browsing ([SEO and more](#seo-and-more)). Nothing that reads `report.json` reads it.
+
+SEO checks saved by the older, separate `--seo` are in a `seo/` folder of the same host directory:
 
 ```
 data/
@@ -925,7 +932,7 @@ All responses are JSON. Errors are always `{ "error": { "code", "message" } }` w
 
 ### `POST /report` (or `GET /report?...`)
 
-Runs PSI and returns the aggregated report. **This costs `runs` quota units and takes a while** — for anything above ~3 runs, prefer `?async=true`.
+Runs PSI and returns the aggregated report. **This costs `runs` quota units and takes a while** — for anything above ~3 runs, prefer `?async=true`. Each run also reads accessibility, best practices, SEO and agentic browsing, at no extra cost; they are saved beside the report and returned by [`GET /report/:reportId/categories`](#get-reportreportidcategories).
 
 | Param | Default | Notes |
 | --- | --- | --- |
@@ -963,6 +970,14 @@ Re-reads a stored report from disk. No quota cost.
 
 ```bash
 curl http://127.0.0.1:3939/report/2026-09-29T10-30-00Z-mobile
+```
+
+### `GET /report/:reportId/categories`
+
+The report's other categories, read in the same PSI calls as its performance: `{ "reportId", "categories": { "accessibility", "best-practices", "seo", "agentic-browsing" } }`, each in the shape `--seo --json` prints. `categories` is `null` for a report measured before runs read them. No quota cost; `404` for an unknown report.
+
+```bash
+curl http://127.0.0.1:3939/report/$ID/categories
 ```
 
 ### `GET /report/:reportId/insights`
@@ -1057,7 +1072,7 @@ curl -X POST http://127.0.0.1:3939/insights \
 
 ### `POST /seo`
 
-Checks one page's SEO: [the same check as `--seo`](#seo-check). It runs PSI once with `category=seo`, so it **costs 1 quota unit** and takes about 15 seconds. It is synchronous, with no `async` option. The body must be JSON (`content-type: application/json`), or the server answers `415`. The URL is validated, and PSI errors are mapped, exactly as in `POST /report`.
+Checks one page's SEO as a separate PSI call with `category=seo`, saved apart from reports. Every report now reads SEO in its own runs ([`GET /report/:reportId/categories`](#get-reportreportidcategories)), so this is for scripts that already use it. It **costs 1 quota unit** and takes about 15 seconds. It is synchronous, with no `async` option. The body must be JSON (`content-type: application/json`), or the server answers `415`. The URL is validated, and PSI errors are mapped, exactly as in `POST /report`.
 
 | Field | Default | Notes |
 | --- | --- | --- |
@@ -1153,11 +1168,11 @@ The code is in three places:
 
 | Folder | What |
 | --- | --- |
-| `src/` | The CLI (`cli.ts`), the server (`server.ts`) and everything they share: PSI calls, aggregation, targets, rendering, storage, the SEO check. |
+| `src/` | The CLI (`cli.ts`), the server (`server.ts`) and everything they share: PSI calls, aggregation, targets, rendering, storage, the categories (SEO and more). |
 | `web/` | The Next.js web UI. `web/src/` holds its views and the small helpers that turn API answers into what the page shows; it imports the CLI's own formatting from `src/` rather than redoing it. |
 | `tests/` | Vitest tests for both, including tests that the page and the CLI agree. |
 
-Tests use saved PSI fixtures in `tests/fixtures/` (performance and SEO) and a mocked `fetch`; **no test touches the network.** Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
+Tests use saved PSI fixtures in `tests/fixtures/` (performance only, SEO only, and every category) and a mocked `fetch`; **no test touches the network.** Retry and backoff behaviour is verified by injecting the fetch, sleep and random functions.
 
 To regenerate the fixture: `node scripts/make-fixture.js`.
 
