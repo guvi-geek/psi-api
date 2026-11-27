@@ -105,7 +105,7 @@ Use `--diagnose`. It ranks the queue against the metrics that are actually faili
 npm run psi -- --reportId <reportId> --diagnose --party first
 ```
 
-Over HTTP, for the ranked queue on its own:
+Over HTTP, for the ranked queue on its own, of a report **measured through the server or the web UI** (a CLI report is not in the server's store, so its id answers `404`; use the command above for it):
 
 ```bash
 curl "localhost:3939/report/<reportId>/diagnosis?party=first"
@@ -733,6 +733,8 @@ This records the device emulation, CPU benchmark, locale and categories the run 
 
 ## 5. Worked examples
 
+> **The HTTP routes see only reports measured through the server or the web UI**, which live in MongoDB. A report measured with `npm run psi` is saved as files under `data/` and is not there: an HTTP call with its id answers `404`. For a CLI report, use the CLI with `--reportId <id>` (`--diagnose`, `--json`, filters).
+
 ### 5.1 `POST /report` — 10 runs, mobile
 
 ```bash
@@ -837,6 +839,8 @@ Every report carries `fieldData`, passed through from PSI untouched:
 - It appears in `--json` and over HTTP. It is **not** rendered in the text output at all, and it is not part of `--diagnose`.
 
 ### 5.3 `GET /report/:reportId/diagnosis` — the ranked work queue
+
+For a report measured through the server or the web UI. For a CLI report, `npm run psi -- --reportId <id> --diagnose --party first` prints the same queue.
 
 ```bash
 curl "http://127.0.0.1:3939/report/2026-09-30T03-46-50Z-mobile/diagnosis?party=first"
@@ -1132,7 +1136,9 @@ gh run view <run-id> --log-failed            # when a poll reports failure
 ```
 
 ```bash
-# server mode, if you want the HTTP API
+# server mode, if you want the HTTP API. It keeps its reports in MongoDB:
+# MONGODB_URI must be set in .env, or the server exits at start.
+npm run db:indexes              # once per database: the server checks these and will not start without them
 npm run dev                     # http://127.0.0.1:3939
 curl http://127.0.0.1:3939/health
 ```

@@ -7,7 +7,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const api = process.env.PSI_API_URL ?? 'http://127.0.0.1:3939';
 
 // Every API route the Fastify server owns. In dev, Next forwards these to `npm run dev`.
-const API_PATHS = ['/health', '/report', '/reports', '/compare', '/reanalyze', '/targets', '/jobs', '/insights'];
+const API_PATHS = ['/health', '/report', '/reports', '/reanalyze', '/targets', '/jobs', '/insights'];
 
 /**
  * Production: a static export in web/out, served by the Fastify server at `/`,

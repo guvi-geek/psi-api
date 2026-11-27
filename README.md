@@ -421,7 +421,7 @@ Reading it is free and read-only. Do not edit it: `--reanalyze` rebuilds from it
 
 ### Listing and comparing reports
 
-Report ids are `<ISO timestamp>-<strategy>` inside `data/<host>/`, so they sort chronologically. `--list` prints every stored report, newest first, at no quota cost (add `--json` for a machine-readable list). The server's `GET /reports` and the web UI's sidebar list the UI's own reports, from MongoDB.
+Report ids are `<ISO timestamp>-<strategy>-<6 hex>` (for example `2026-11-27T10-15-03Z-mobile-3fa9c1`) inside `data/<host>/`, so they sort chronologically; the random end keeps two reports of the same second apart. Ids from before it, without the end, still work everywhere. `--list` prints every stored report, newest first, at no quota cost (add `--json` for a machine-readable list). The server's `GET /reports` and the web UI's sidebar list the UI's own reports, from MongoDB.
 
 ```
 $ npm run psi -- --list
@@ -895,7 +895,7 @@ The pass-rate fields are **omitted entirely** when there is no per-run series to
 
 ## Storage
 
-The CLI and the web UI keep separate reports. The CLI writes files, described here. The UI server writes to MongoDB, in the database `PSI-API` (`PSI_MONGO_DB`): `reports` (one document per report, with the list fields beside it), `runs` (one per run) and `categories` (one per report). Each holds the same JSON text the files hold, so a report reads the same from either. The server only inserts and updates: it never deletes. `npm run db:indexes` creates the unique `reportId` indexes; run it on purpose before first use, because the server never creates an index.
+The CLI and the web UI keep separate reports. The CLI writes files, described here. The UI server writes to MongoDB, in the database `PSI-API` (`PSI_MONGO_DB`): `reports` (one document per report, with the list fields beside it), `runs` (one per run) and `categories` (one per report). Each holds the same JSON text the files hold, so a report reads the same from either. The server only inserts and updates: it never deletes. `npm run db:indexes` creates the unique `reportId` indexes; run it on purpose before first use, because the server never creates an index. At start the server checks that all three are there, and stops with a message naming the missing one rather than run without them.
 
 CLI reports land in `data/<host>/<reportId>/`:
 
@@ -1092,10 +1092,20 @@ curl http://127.0.0.1:3939/jobs/job_m1a2b3_7
 
 ### `GET /reports`
 
-Every report the UI has stored in MongoDB, newest first, as `{ "reports": [...] }`: the same shape as the CLI's `--list`. Each entry has `reportId`, `host`, `url`, `strategy`, `stat`, `generatedAt`, `runsRequested`, `runsSucceeded`, `score`, `lcp`, `meetsTarget`, `targetsFailing` and `targetsTotal`. No quota cost.
+The reports the UI has stored in MongoDB, newest first, a page at a time, as `{ "reports": [...], "next" }`: the same entries as the CLI's `--list`. Each has `reportId`, `host`, `url`, `strategy`, `stat`, `generatedAt`, `runsRequested`, `runsSucceeded`, `score`, `lcp`, `meetsTarget`, `targetsFailing` and `targetsTotal`. No quota cost.
+
+| Param | Default | |
+| --- | --- | --- |
+| `limit` | `50` | Reports in this page, 1–200. |
+| `before` | — | The previous answer's `next`: the page after it. |
+| `q` | — | Only pages whose address contains this, ignoring case. |
+
+`next` is `null` on the last page. The web UI's sidebar loads 50, with **Load more** for the next page, and its filter asks with `q`.
 
 ```bash
-curl http://127.0.0.1:3939/reports
+curl "http://127.0.0.1:3939/reports?limit=50"
+curl "http://127.0.0.1:3939/reports?limit=50&before=2026-11-27T10-15-03Z-mobile-3fa9c1"
+curl "http://127.0.0.1:3939/reports?q=zen-class"
 ```
 
 ### `POST /reanalyze`
