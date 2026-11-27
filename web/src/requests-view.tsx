@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { AggregatedReport } from '../../src/types';
 import { href } from './router';
 import {
@@ -19,7 +19,19 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   const [filters, setFilters] = useState<RequestFilters>(() => ({ ...requestsFromParams(params), limit: undefined }));
   const [page, setPage] = useState(() => Number(params.get('page') ?? 1));
   const ids = useId();
-  const tableRef = useRef<HTMLDivElement>(null);
+  // Where the pager sat on screen when Previous or Next was pressed, to keep it there.
+  const pagerRef = useRef<HTMLElement>(null);
+  const pagerTop = useRef<number | null>(null);
+
+  // After the page changes, scroll by however much the pager moved (the last page is
+  // often shorter), so the buttons stay under the pointer instead of the page jumping.
+  useLayoutEffect(() => {
+    const before = pagerTop.current;
+    pagerTop.current = null;
+    if (before === null || !pagerRef.current) return;
+    const moved = pagerRef.current.getBoundingClientRect().top - before;
+    if (moved !== 0) window.scrollBy(0, moved);
+  }, [page]);
 
   useEffect(() => {
     const next = requestsToParams(filters);
@@ -43,11 +55,9 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
   const { rows: allRows, matched } = requestRows(requests, filters);
   const shown = pageOf(matched, page);
   const rows = allRows.slice(shown.start, shown.end);
-  // A new page starts from its first row: bring the table top back into view if it has scrolled away.
   const goTo = (next: number) => {
+    pagerTop.current = pagerRef.current?.getBoundingClientRect().top ?? null;
     setPage(next);
-    const top = tableRef.current?.getBoundingClientRect().top ?? 0;
-    if (top < 0) tableRef.current?.scrollIntoView({ block: 'start' });
   };
   // A new filter or order starts again at the first page.
   const update = (patch: Partial<RequestFilters>) => {
@@ -135,7 +145,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
         </div>
       </div>
 
-      <div className="panel table-panel" ref={tableRef}>
+      <div className="panel table-panel">
         <div className="table-scroll">
           <table className="table requests-table">
             <thead>
@@ -176,7 +186,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
           </table>
         </div>
         {matched > 0 && (
-          <nav className="pager" aria-label="Request pages">
+          <nav className="pager" aria-label="Request pages" ref={pagerRef}>
             <span className="pager-status" aria-live="polite">
               Showing {shown.start + 1}–{shown.end} of {matched} request{matched === 1 ? '' : 's'}
             </span>
