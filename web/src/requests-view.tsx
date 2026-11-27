@@ -10,7 +10,6 @@ import {
   requestsFromParams,
   requestsToParams,
   requestTotals,
-  TYPE_PLURALS,
   type RequestFilters,
 } from './requests';
 
@@ -88,13 +87,6 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
           {totals.third.bytes}
           {totals.notFound > 0 && <span className="text-bad">, {totals.notFound} returned 404 Not Found</span>}.
         </p>
-        <ul className="type-list">
-          {totals.byType.map((entry) => (
-            <li key={entry.type}>
-              {entry.label} <span className="muted-cell">- {entry.bytes}</span>
-            </li>
-          ))}
-        </ul>
       </div>
 
       <div className="filter-bar panel">
@@ -143,7 +135,7 @@ export function RequestsView({ report, params }: { report: AggregatedReport; par
                 aria-pressed={Boolean(filters.types?.includes(entry.type))}
                 onClick={() => toggleType(entry.type)}
               >
-                {TYPE_PLURALS[entry.type] ?? `${entry.type}s`} <span className="chip-count">{entry.count}</span>
+                {entry.label} <span className="chip-count">- {entry.bytes}</span>
               </button>
             ))}
             <label className="check check-inline type-several">

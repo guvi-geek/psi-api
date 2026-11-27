@@ -1506,16 +1506,7 @@ a.tab:hover {
 }
 
 .request-totals {
-  margin: 0 0 10px;
-}
-.type-list {
-  list-style: none;
   margin: 0;
-  padding: 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 18px;
-  font-size: 13px;
 }
 .requests-table td {
   white-space: nowrap;
