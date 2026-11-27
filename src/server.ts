@@ -27,7 +27,7 @@ import { InsufficientRunsError, MAX_RUNS, runReport } from './runner.js';
 import { UrlValidationError } from './psiClient.js';
 import type { ReportStore } from './report-store.js';
 import { closeMongo, connectMongo } from './db/mongo.js';
-import { MongoStore } from './db/mongo-store.js';
+import { checkIndexes, MongoStore } from './db/mongo-store.js';
 import { diffReanalyzed, reanalyze, type ReanalyzeDelta } from './reanalyze.js';
 import { loadTargets } from './targets.js';
 import { assessMeasurement } from './validity.js';
@@ -355,6 +355,15 @@ const insightsBody = z.object({
     .optional(),
 });
 
+/** A page of the report list. The sidebar asks for 50 at a time. */
+const reportsQuery = z.object({
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  /** The last reportId of the previous page. */
+  before: z.string().min(1).max(100).optional(),
+  /** Only pages whose address contains this. */
+  q: z.string().max(200).optional(),
+});
+
 const reanalyzeBody = z.object({
   /** Omit to rebuild every stored report, like the CLI's bare --reanalyze. */
   reportId: z.string().min(1).optional(),
@@ -541,8 +550,14 @@ export function buildServer(options: ServerOptions): FastifyInstance {
     return reply.send(insightsPayload(report, filterParams.parse(body.filters ?? {})));
   });
 
-  // The CLI's --list, with the fields a report picker needs. Free: one read of the store.
-  app.get('/reports', async () => ({ reports: await store.listSummaries() }));
+  // The CLI's --list, a page at a time, with the fields a report picker needs. Free.
+  // `next` is the cursor for the following page: pass it as `before`; null when this is the last.
+  app.get('/reports', async (req) => {
+    const query = reportsQuery.parse(compact(req.query));
+    const page = await store.listSummaries({ limit: query.limit + 1, before: query.before, q: query.q?.trim() || undefined });
+    const reports = page.slice(0, query.limit);
+    return { reports, next: page.length > query.limit ? reports[reports.length - 1]!.reportId : null };
+  });
 
   // The CLI's --reanalyze. Free: rebuilds from the stored runs, never calls PSI.
   app.post('/reanalyze', async (req, reply) => {
@@ -594,6 +609,15 @@ if (entry && import.meta.url === pathToFileURL(entry).href) {
     .catch((error) => {
       console.error(`psi-api: cannot reach MongoDB: ${error instanceof Error ? error.message : String(error)}`);
       process.exit(1);
+    })
+    // Without its unique indexes the list sorts in memory (and fails once large) and ids are not unique.
+    // The server never creates them: `npm run db:indexes` does, once per database.
+    .then(async () => {
+      const missing = await checkIndexes();
+      if (missing.length > 0) {
+        console.error(`psi-api: MongoDB is missing ${missing.length} index(es): ${missing.join('; ')}. Run npm run db:indexes once, then start again.`);
+        process.exit(1);
+      }
     })
     .then(() => {
       const app = buildServer({ store: new MongoStore() });

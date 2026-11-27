@@ -11,10 +11,38 @@
  */
 import type { AggregatedReport, NormalizedReport } from '../types.js';
 import type { ReportCategories } from '../categories.js';
-import { hostKey, summarize, type ReportStore, type ReportSummary } from '../report-store.js';
-import { find, findOne, getDBName, update } from './mongo.js';
+import { hostKey, summarize, type ListOptions, type ReportStore, type ReportSummary } from '../report-store.js';
+import { find, findOne, getDBName, indexesOf, update } from './mongo.js';
 
 export const COLLECTIONS = { reports: 'reports', runs: 'runs', categories: 'categories' } as const;
+
+/**
+ * The unique indexes the UI's queries rely on. `npm run db:indexes` creates
+ * them; the server only checks they are there (it never creates an index).
+ */
+export const REQUIRED_INDEXES: Array<{ collection: string; keys: Record<string, 1 | -1> }> = [
+  { collection: COLLECTIONS.reports, keys: { reportId: 1 } },
+  { collection: COLLECTIONS.runs, keys: { reportId: 1, index: 1 } },
+  { collection: COLLECTIONS.categories, keys: { reportId: 1 } },
+];
+
+/** Which required indexes a database lacks, given each collection's index list. */
+export function missingIndexes(existing: Record<string, Array<{ key: Record<string, unknown>; unique?: boolean }>>): string[] {
+  const same = (a: Record<string, unknown>, b: Record<string, unknown>) => JSON.stringify(a) === JSON.stringify(b);
+  return REQUIRED_INDEXES.filter(
+    (required) => !(existing[required.collection] ?? []).some((index) => index.unique === true && same(index.key, required.keys)),
+  ).map((required) => `${required.collection} ${JSON.stringify(required.keys)} (unique)`);
+}
+
+/** Read the index lists of the live database and report any required one that is missing. */
+export async function checkIndexes(): Promise<string[]> {
+  const existing: Record<string, Array<{ key: Record<string, unknown>; unique?: boolean }>> = {};
+  for (const { collection } of REQUIRED_INDEXES) existing[collection] = await indexesOf(getDBName(), collection);
+  return missingIndexes(existing);
+}
+
+/** Escapes text so a search for "a.b" matches a dot, not any character. */
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 interface ReportDoc {
   reportId: string;
@@ -131,11 +159,16 @@ export class MongoStore implements ReportStore {
     return doc ? (JSON.parse(doc.categories) as ReportCategories) : null;
   }
 
-  async listSummaries(): Promise<ReportSummary[]> {
+  async listSummaries(options: ListOptions = {}): Promise<ReportSummary[]> {
     // Report ids are timestamp-prefixed, so a reverse sort is newest first, as the file store lists them.
-    const docs = await find<ReportDoc>(getDBName(), COLLECTIONS.reports, {}, {
+    // The sort walks the unique reportId index, so a page reads only that page.
+    const filter: Record<string, unknown> = {};
+    if (options.before !== undefined) filter.reportId = { $lt: options.before };
+    if (options.q) filter.url = { $regex: escapeRegex(options.q), $options: 'i' };
+    const docs = await find<ReportDoc>(getDBName(), COLLECTIONS.reports, filter, {
       projection: { summary: 1 },
       sort: { reportId: -1 },
+      ...(options.limit !== undefined ? { limit: options.limit } : {}),
     });
     return docs.map((doc) => doc.summary);
   }

@@ -1,24 +1,75 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api, ApiError } from './api';
 import { href } from './router';
-import { formatWhen, groupReports, measuredAt, pathOf, scoreBand, type ReportRow } from './run';
-import { useApi } from './use-api';
+import { formatWhen, groupReports, measuredAt, pathOf, reportsPath, scoreBand, type ReportRow } from './run';
 
-/** The CLI's --list: stored reports by host, newest first. Reading them costs no quota. */
+type Page = { reports: ReportRow[]; next: string | null };
+
+/**
+ * The CLI's --list: stored reports by host, newest first, a page at a time.
+ * The filter asks the server, so it finds reports that are not loaded yet.
+ * Reading them costs no quota.
+ */
 export function Sidebar({ activeId, version }: { activeId?: string; version: number }) {
-  const { data, error } = useApi<{ reports: ReportRow[] }>('/reports', version);
   const [query, setQuery] = useState('');
-  const reports = data?.reports ?? [];
-  const groups = groupReports(reports, query);
+  const [search, setSearch] = useState('');
+  const [list, setList] = useState<{ reports: ReportRow[]; next: string | null } | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  // Wait for a pause in typing before asking the server.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(query.trim()), 250);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  // The first page: again after each finished run (version) and for each search.
+  useEffect(() => {
+    let live = true;
+    api<Page>(reportsPath({ q: search }))
+      .then((page) => {
+        if (!live) return;
+        setList({ reports: page.reports, next: page.next });
+        setError(null);
+      })
+      .catch((caught: ApiError) => live && setError(caught));
+    return () => {
+      live = false;
+    };
+  }, [search, version]);
+
+  async function loadMore() {
+    if (!list?.next) return;
+    setLoadingMore(true);
+    try {
+      const page = await api<Page>(reportsPath({ q: search, before: list.next }));
+      setList((current) => ({ reports: [...(current?.reports ?? []), ...page.reports], next: page.next }));
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught : new ApiError(0, 'ERROR', String(caught)));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const reports = list?.reports ?? [];
+  const groups = groupReports(reports);
+  // Shown once there is something to narrow, and kept while a search is typed.
+  const showFilter = reports.length > 5 || Boolean(list?.next) || query !== '';
 
   return (
     <aside className="sidebar" aria-label="Saved reports">
       <div className="sidebar-head">
         <h2 className="sidebar-title">Reports</h2>
-        {data && <span className="sidebar-count">{reports.length}</span>}
+        {list && (
+          <span className="sidebar-count" title={list.next ? 'More are stored: load them below' : undefined}>
+            {reports.length}
+            {list.next ? '+' : ''}
+          </span>
+        )}
       </div>
-      {reports.length > 5 && (
+      {showFilter && (
         <input
           className="input sidebar-filter"
           type="search"
@@ -29,8 +80,7 @@ export function Sidebar({ activeId, version }: { activeId?: string; version: num
         />
       )}
       {error && <p className="muted">{error.message}</p>}
-      {data && reports.length === 0 && <p className="muted">Pages you measure are saved here.</p>}
-      {data && reports.length > 0 && groups.length === 0 && <p className="muted">No report matches.</p>}
+      {list && reports.length === 0 && <p className="muted">{search ? 'No report matches.' : 'Pages you measure are saved here.'}</p>}
 
       {groups.map((group) => (
         <section key={group.host} className="host-group">
@@ -46,6 +96,12 @@ export function Sidebar({ activeId, version }: { activeId?: string; version: num
           </ul>
         </section>
       ))}
+
+      {list?.next && (
+        <button type="button" className="button button-quiet sidebar-more" onClick={loadMore} disabled={loadingMore} aria-busy={loadingMore}>
+          {loadingMore ? 'Loading' : 'Load more'}
+        </button>
+      )}
     </aside>
   );
 }

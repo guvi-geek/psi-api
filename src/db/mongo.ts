@@ -58,6 +58,15 @@ function collection<T extends Document>(db: string, name: string) {
   return client.db(db).collection<T>(name);
 }
 
+/** A collection's indexes, or none when the collection does not exist yet. */
+export async function indexesOf(db: string, name: string): Promise<Array<{ key: Record<string, unknown>; unique?: boolean }>> {
+  try {
+    return (await collection(db, name).indexes()) as Array<{ key: Record<string, unknown>; unique?: boolean }>;
+  } catch {
+    return [];
+  }
+}
+
 export function find<T extends Document>(db: string, name: string, filter: Filter<T> = {}, options: FindOptions = {}) {
   return collection<T>(db, name).find(filter, options).toArray();
 }

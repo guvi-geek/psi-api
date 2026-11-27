@@ -7,13 +7,10 @@
 import 'dotenv/config';
 import { MongoClient } from 'mongodb';
 import { closeMongo, connectMongo, getDBName } from '../src/db/mongo.js';
-import { COLLECTIONS } from '../src/db/mongo-store.js';
+import { REQUIRED_INDEXES } from '../src/db/mongo-store.js';
 
-const INDEXES: Array<{ collection: string; keys: Record<string, 1 | -1>; unique: boolean }> = [
-  { collection: COLLECTIONS.reports, keys: { reportId: 1 }, unique: true },
-  { collection: COLLECTIONS.runs, keys: { reportId: 1, index: 1 }, unique: true },
-  { collection: COLLECTIONS.categories, keys: { reportId: 1 }, unique: true },
-];
+// The same list the server checks for at start.
+const INDEXES = REQUIRED_INDEXES.map((index) => ({ ...index, unique: true }));
 
 async function main(): Promise<void> {
   const client: MongoClient = await connectMongo();

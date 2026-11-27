@@ -178,6 +178,14 @@ export function groupReports(reports: ReportRow[], query = ''): HostGroup[] {
   return [...groups.entries()].map(([host, list]) => ({ host, reports: list }));
 }
 
+/** The report list request: one page of 50, older than `before`, matching `q`. */
+export function reportsPath(options: { q?: string; before?: string } = {}): string {
+  const params = new URLSearchParams({ limit: '50' });
+  if (options.before) params.set('before', options.before);
+  if (options.q) params.set('q', options.q);
+  return `/reports?${params}`;
+}
+
 /** The page path shown under its host heading: "/" for the home page. */
 export function pathOf(url: string): string {
   try {

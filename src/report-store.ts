@@ -35,6 +35,23 @@ export interface ReportSummary {
   targetsTotal: number;
 }
 
+/** One page of the report list. With none of these, every report. */
+export interface ListOptions {
+  /** At most this many. */
+  limit?: number;
+  /** Only reports older than this id: the last id of the previous page. */
+  before?: string;
+  /** Only reports whose page address contains this, ignoring case. */
+  q?: string;
+}
+
+/** The list filter both stores apply, so a page reads the same from files and MongoDB. */
+export function matchesList(summary: Pick<ReportSummary, 'reportId' | 'url'>, options: ListOptions): boolean {
+  if (options.before !== undefined && !(summary.reportId < options.before)) return false;
+  if (options.q && !summary.url.toLowerCase().includes(options.q.toLowerCase())) return false;
+  return true;
+}
+
 export interface ReportStore {
   /** Store a new report, its runs and nothing else. Returns where it went, for the log. */
   saveReport(report: AggregatedReport, runs: NormalizedReport[]): Promise<{ reportId: string; location: string }>;
@@ -45,8 +62,8 @@ export interface ReportStore {
   loadRuns(reportId: string): Promise<NormalizedReport[] | null>;
   /** Null for a report measured before runs read every category. */
   loadCategories(reportId: string): Promise<ReportCategories | null>;
-  /** Every stored report, newest first. */
-  listSummaries(): Promise<ReportSummary[]>;
+  /** Stored reports, newest first: every one, or one page of them. */
+  listSummaries(options?: ListOptions): Promise<ReportSummary[]>;
 }
 
 /** The host folder name data/ uses, so both stores group reports the same way. */
@@ -109,11 +126,15 @@ export class FileStore implements ReportStore {
     return loadCategories(reportId, this.dir());
   }
 
-  async listSummaries(): Promise<ReportSummary[]> {
+  async listSummaries(options: ListOptions = {}): Promise<ReportSummary[]> {
     const summaries: ReportSummary[] = [];
     for (const ref of await listReports(this.dir())) {
+      if (options.limit !== undefined && summaries.length >= options.limit) break;
+      if (options.before !== undefined && !(ref.reportId < options.before)) continue;
       const report = await loadReport(ref.reportId, this.dir());
-      if (report) summaries.push(summarize(report, ref.host));
+      if (!report) continue;
+      const summary = summarize(report, ref.host);
+      if (matchesList(summary, options)) summaries.push(summary);
     }
     return summaries;
   }
