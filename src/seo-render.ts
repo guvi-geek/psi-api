@@ -4,7 +4,7 @@
  * them directly. Colour and layout come from render.ts, so an SEO check looks
  * like the rest of the CLI.
  */
-import { cellText, seoSections, type SeoAudit, type SeoAuditState, type SeoCheck, type SeoSummary, type SeoTable } from './seo.js';
+import { cellText, seoSections, type SeoAudit, type CategoryCheck, type SeoAuditState, type SeoCheck, type SeoSummary, type SeoTable } from './seo.js';
 import {
   ABSENT,
   lighthouseLabel,
@@ -22,6 +22,10 @@ export interface SeoViewOptions {
   /** Total width to fit, indent included. */
   width: number;
   useColor: boolean;
+  /** The heading word: SEO, ACCESSIBILITY, ... Default SEO. */
+  label?: string;
+  /** The id that re-reads this view: a report id, or a saved check's seoId (the default). */
+  id?: string;
   /** Most detail rows printed per audit. The rest are counted, and are in --json. */
   rowLimit?: number;
 }
@@ -57,7 +61,7 @@ function flat(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
 }
 
-function countsLine(check: SeoCheck): string {
+function countsLine(check: Pick<SeoCheck, 'counts'>): string {
   const { counts } = check;
   const parts = [
     `${counts.passed} passed`,
@@ -69,14 +73,16 @@ function countsLine(check: SeoCheck): string {
   return parts.join(' · ');
 }
 
-function header(check: SeoCheck, options: SeoViewOptions): string[] {
+function header(check: ViewCheck, options: SeoViewOptions): string[] {
   const { width, useColor } = options;
+  const label = options.label ?? 'SEO';
+  const id = options.id ?? check.seoId ?? '';
   const facts = [check.strategy, lighthouseLabel(check.lighthouseVersion), when(check.fetchedAt)].join(' · ');
-  const withId = `${facts} · ${check.seoId}`;
+  const withId = `${facts} · ${id}`;
   const lines = [
-    `${paint('bold', 'SEO', useColor)}  ${paint('bold', shortenUrl(check.url, width - 5), useColor)}`,
-    // The id is what --seoId takes, so it moves to its own line rather than being cut.
-    ...(withId.length <= width ? [withId] : [truncate(facts, width), check.seoId]).map((line) => paint('dim', line, useColor)),
+    `${paint('bold', label, useColor)}  ${paint('bold', shortenUrl(check.url, width - label.length - 2), useColor)}`,
+    // The id is what re-reads this view, so it moves to its own line rather than being cut.
+    ...(withId.length <= width ? [withId] : [truncate(facts, width), id]).map((line) => paint('dim', line, useColor)),
   ];
   if (check.finalUrl && check.finalUrl !== check.url) {
     lines.push(paint('dim', `landed on ${shortenUrl(check.finalUrl, width - 10)}`, useColor));
@@ -88,7 +94,7 @@ function header(check: SeoCheck, options: SeoViewOptions): string[] {
 }
 
 /** The score, with the counts beside it, or under it when the line would not fit. */
-function scoreLines(check: SeoCheck, options: SeoViewOptions): string[] {
+function scoreLines(check: ViewCheck, options: SeoViewOptions): string[] {
   const { useColor, width } = options;
   const score = check.score === null ? paint('dim', ABSENT, useColor) : paint(scoreColor(check.score), String(check.score), useColor);
   const lead = `${paint('bold', 'SCORE', useColor)}    ${score} / 100`;
@@ -182,7 +188,10 @@ function sectionHeading(title: string, audits: SeoAudit[], state: SeoAuditState,
 }
 
 /** A check in the website's order: errors, failed audits by group, manual, passed, not applicable. */
-export function renderSeoCheck(check: SeoCheck, options: SeoViewOptions): string[] {
+/** A saved SEO check, or any category of a report (which has no seoId of its own). */
+type ViewCheck = CategoryCheck & { seoId?: string };
+
+export function renderSeoCheck(check: ViewCheck, options: SeoViewOptions): string[] {
   const { useColor } = options;
   const lines = [...header(check, options), '', ...scoreLines(check, options)];
   const sections = seoSections(check);
@@ -194,7 +203,9 @@ export function renderSeoCheck(check: SeoCheck, options: SeoViewOptions): string
       if (audit.state === 'failed' || audit.state === 'error') lines.push(...detailLines(audit, options));
     }
   }
-  if (sections.length === 0) lines.push('', paint('dim', `${INDENT}Lighthouse returned no SEO audits`, useColor));
+  if (sections.length === 0) {
+    lines.push('', paint('dim', `${INDENT}Lighthouse returned no ${options.label ?? 'SEO'} audits`, useColor));
+  }
   return lines;
 }
 

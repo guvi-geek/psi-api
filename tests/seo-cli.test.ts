@@ -1,4 +1,4 @@
-/** The SEO flags on the CLI: parsing, the text view, and the --seo / --seoId / --seoList paths with a fake PSI. */
+/** The category flags on the CLI (--seo, --accessibility, --best-practices, --agentic): parsing, the text view, and their paths with a fake PSI; and --seoId / --seoList for older saved checks. */
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 import { main, parseArgs } from '../src/cli.js';
 import { normalizeSeo, type SeoCheck } from '../src/seo.js';
 import { renderSeoCheck, renderSeoList } from '../src/seo-render.js';
+import { saveSeoCheck } from '../src/seo-storage.js';
 import { visibleLength } from '../src/render.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -92,7 +93,11 @@ describe('parseArgs: the SEO flags', () => {
       noSave: true,
       json: true,
     });
-    expect(parseArgs([URL_, '--seo', '--strategy', 'desktop'])).toMatchObject({ strategy: 'desktop' });
+    expect(parseArgs([URL_, '--seo', '--strategy', 'desktop'])).toMatchObject({ strategy: 'desktop', category: 'seo' });
+    expect(parseArgs([URL_, '--seo', '--runs', '3', '--stat', 'mean'])).toMatchObject({ runs: 3, stat: 'mean', category: 'seo' });
+    expect(parseArgs([URL_, '--accessibility'])).toMatchObject({ category: 'accessibility', seo: false });
+    expect(parseArgs(['--reportId', '2026-09-29T10-30-00Z-mobile', '--best-practices', '--json'])).toMatchObject({ category: 'best-practices', json: true });
+    expect(parseArgs(['--reportId', '2026-09-29T10-30-00Z-mobile', '--agentic'])).toMatchObject({ category: 'agentic-browsing' });
   });
 
   it('reads --seoId and --seoList, with --json', () => {
@@ -112,7 +117,9 @@ describe('parseArgs: the SEO flags', () => {
   const bad: Array<[string[], RegExp]> = [
     [[URL_, '--seo', '--seoList'], /--seo and --seoList are separate modes/],
     [['--seoId', ID, '--seoList'], /--seoId and --seoList are separate modes/],
-    [[URL_, '--seo', '--reportId', '2026-09-29T10-30-00Z-mobile'], /--reportId cannot be combined with --seo/],
+    [[URL_, '--seo', '--reportId', '2026-09-29T10-30-00Z-mobile'], /--seo takes a url or --reportId, not both/],
+    [[URL_, '--seo', '--accessibility'], /--seo and --accessibility are separate modes/],
+    [['--reportId', '2026-09-29T10-30-00Z-mobile', '--agentic', '--desktop'], /--desktop cannot be combined with --agentic --reportId/],
     [[URL_, '--seo', '--list'], /--list cannot be combined with --seo/],
     [['--seoList', '--compare', 'a', 'b'], /--compare cannot be combined with --seoList/],
     [[URL_, '--seo', '--reanalyze'], /--reanalyze cannot be combined/],
@@ -123,8 +130,7 @@ describe('parseArgs: the SEO flags', () => {
     [[URL_, '--seo', '--metric', 'lcp'], /--metric cannot be combined/],
     [['--seoId', ID, '--party', 'first'], /--party cannot be combined with --seoId/],
     [['--seoId', ID, '--desktop'], /--desktop cannot be combined with --seoId/],
-    [[URL_, '--seo', '--runs', '3'], /--runs cannot be combined with --seo/],
-    [['--seo'], /--seo requires a url/],
+    [['--seo'], /--seo needs a url to measure, or --reportId/],
     [[URL_, '--seoList'], /takes no url/],
     [['--seoId', 'not-an-id'], /--seoId expects an id like/],
     [['--seoId', '2026-11-26T10-00-00Z-mobile'], /--seoId expects an id like/],
@@ -236,7 +242,7 @@ describe('renderSeoList', () => {
   });
 });
 
-describe('the --seo, --seoId and --seoList paths', () => {
+describe('the category views and the --seoId / --seoList paths', () => {
   let dir: string;
   let out: string[];
   let err: string[];
@@ -292,100 +298,109 @@ describe('the --seo, --seoId and --seoList paths', () => {
     }
   };
 
-  it('--seo makes exactly one PSI call with category=seo, saves it, and --seoId / --seoList read it back', async () => {
-    expect(await main([URL_, '--seo', '--desktop'], deps)).toBe(0);
-    expect(requests).toHaveLength(1);
-    const query = new URL(requests[0]!).searchParams;
-    expect(query.getAll('category')).toEqual(['seo']);
-    expect(query.get('strategy')).toBe('desktop');
-    expect(query.get('key')).toBe('test-key');
+  /** A PSI stand-in that answers with every category, one fresh analysis per call. */
+  const ALL = JSON.parse(readFileSync(path.join(here, 'fixtures', 'raw-all-categories-real.json'), 'utf8'));
+  let calls = 0;
+  const allCategories = (performanceOnly = false) =>
+    (async (input: string | URL) => {
+      requests.push(String(input));
+      const raw = JSON.parse(JSON.stringify(ALL));
+      raw.lighthouseResult.fetchTime = `2026-11-27T10:00:${String(calls++ % 60).padStart(2, '0')}.000Z`;
+      if (performanceOnly) {
+        // As a run from before every call read all categories.
+        for (const id of Object.keys(raw.lighthouseResult.categories)) if (id !== 'performance') delete raw.lighthouseResult.categories[id];
+      }
+      return new Response(JSON.stringify(raw), { status: 200, headers: { 'content-type': 'application/json' } });
+    }) as typeof fetch;
+  const all = () => ({ fetchImpl: allCategories(), sleepImpl: async () => {} });
 
-    const files = await seoFiles();
-    expect(files).toHaveLength(1);
-    const seoId = files[0]!.replace(/\.json$/, '');
-    expect(seoId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-desktop-seo$/);
+  const reportIdIn = (text: string) => /saved as reportId (\S+)/.exec(text)?.[1] ?? '';
 
+  it('--seo with a url measures as usual, reading every category, and shows the SEO view', async () => {
+    expect(await main([URL_, '--seo', '--runs', '2', '--desktop'], all())).toBe(0);
+    expect(requests).toHaveLength(2);
+    for (const request of requests) {
+      const query = new URL(request).searchParams;
+      expect(query.getAll('category')).toEqual(['PERFORMANCE', 'ACCESSIBILITY', 'BEST_PRACTICES', 'SEO', 'AGENTIC_BROWSING']);
+      expect(query.get('strategy')).toBe('desktop');
+    }
     const text = out.join('');
+    const reportId = reportIdIn(text);
+    expect(reportId).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z-desktop$/);
     expect(text).toContain(`SEO  ${URL_}`);
+    expect(text).toContain(`UTC · ${reportId}`);
     expect(text).toContain('SCORE    100 / 100');
-    expect(text).toContain(`saved as seoId ${seoId} in `);
-    expect(text).toContain(`--seoId ${seoId} re-reads it for free (no PSI call)`);
-    expect(err.join('')).toContain('desktop · SEO · 1 PSI call');
-
-    out.length = 0;
-    expect(await main(['--seoId', seoId, '--json'], deps)).toBe(0);
-    const reread = JSON.parse(out.join('')) as SeoCheck;
-    expect(reread).toMatchObject({ seoId, url: URL_, strategy: 'desktop', score: 100 });
-
-    out.length = 0;
-    expect(await main(['--seoId', seoId], deps)).toBe(0);
-    expect(out.join('')).toContain('PASSED AUDITS  10');
-
-    out.length = 0;
-    expect(await main(['--seoList', '--json'], deps)).toBe(0);
-    const listed = JSON.parse(out.join('')) as { checks: Array<{ seoId: string; counts: { failed: number } }> };
-    expect(listed.checks.map((check) => check.seoId)).toEqual([seoId]);
-
-    out.length = 0;
-    expect(await main(['--seoList'], deps)).toBe(0);
-    // At 100 columns the page is cut to fit, the way the other tables cut a long cell.
-    expect(out.join('')).toMatch(new RegExp(`SEO CHECKS  1 saved, newest first[\\s\\S]*${seoId} +https://www\\.guvi\\.in/zen-class/\\S* +desktop +100 +0`));
-    // Re-reading and listing never reached PSI.
-    expect(requests).toHaveLength(1);
+    expect(text).toContain(`--reportId ${reportId} --seo re-reads it for free (no PSI call)`);
+    // The performance report is saved as usual, its other categories beside it; no separate SEO check.
+    expect((await readdir(path.join(dir, 'www.guvi.in', reportId))).sort()).toEqual(['categories.json', 'report.json', 'runs.json']);
+    expect(await seoFiles()).toEqual([]);
+    expect(err.join('')).toContain('desktop · 2 runs');
   });
 
-  it('--seo --json prints a parseable SeoCheck, and --no-save writes nothing', async () => {
-    expect(await main([URL_, '--seo', '--json', '--no-save'], deps)).toBe(0);
-    expect(requests).toHaveLength(1);
-    const check = JSON.parse(out.join('')) as SeoCheck;
-    expect(check).toMatchObject({ url: URL_, strategy: 'mobile', score: 100, counts: { passed: 10, manual: 1 } });
-    expect(check.seoId).toMatch(/-mobile-seo$/);
-    expect(err.join('')).toBe('');
-    expect(await seoFiles()).toEqual([]);
+  it('--accessibility, --best-practices and --agentic read a saved report for free', async () => {
+    expect(await main([URL_, '--runs', '1'], all())).toBe(0);
+    const reportId = reportIdIn(out.join(''));
+    // The plain command still prints the performance report.
+    expect(out.join('')).toContain('FINDINGS');
+    const before = requests.length;
+
+    out.length = 0;
+    expect(await main(['--reportId', reportId, '--accessibility'], all())).toBe(0);
+    const a11y = out.join('');
+    expect(a11y).toContain(`ACCESSIBILITY  ${URL_}`);
+    expect(a11y).toContain('SCORE    97 / 100');
+    expect(a11y).toMatch(/CONTRAST {2}1 failed\n {2}✗ color-contrast/);
+    expect(a11y).not.toContain('saved as reportId');
+
+    out.length = 0;
+    expect(await main(['--reportId', reportId, '--best-practices', '--json'], all())).toBe(0);
+    expect(JSON.parse(out.join(''))).toMatchObject({ reportId, category: 'best-practices', title: 'Best Practices', score: 96 });
+
+    out.length = 0;
+    expect(await main(['--reportId', reportId, '--agentic'], all())).toBe(0);
+    expect(out.join('')).toContain(`AGENTIC BROWSING  ${URL_}`);
+    expect(out.join('')).toContain('✓ llms-txt');
+    expect(requests).toHaveLength(before);
+  });
+
+  it('--seo --json --no-save prints the category and writes nothing', async () => {
+    expect(await main([URL_, '--seo', '--json', '--no-save', '--runs', '1'], all())).toBe(0);
+    expect(JSON.parse(out.join(''))).toMatchObject({ category: 'seo', url: URL_, score: 100, counts: { passed: 10, manual: 1 } });
     expect(await readdir(dir)).toEqual([]);
   });
 
-  it('two checks in the same second both save, and each prints the id it was saved under', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    vi.setSystemTime(new Date('2026-11-26T10:00:00.000Z'));
-    try {
-      expect(await main([URL_, '--seo', '--json'], deps)).toBe(0);
-      const first = (JSON.parse(out.join('')) as SeoCheck).seoId;
-      out.length = 0;
-      expect(await main([URL_, '--seo'], deps)).toBe(0);
-      expect(first).toBe('2026-11-26T10-00-00Z-mobile-seo');
-      const second = '2026-11-26T10-00-01Z-mobile-seo';
-      expect(out.join('')).toContain(`saved as seoId ${second} in `);
-      expect(out.join('')).toContain(`--seoId ${second} re-reads it for free`);
-      expect(out.join('')).toContain(`UTC · ${second}`);
-      expect((await seoFiles()).sort()).toEqual([`${first}.json`, `${second}.json`]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it('--seo --no-save in text says it was not saved', async () => {
-    expect(await main([URL_, '--seo', '--no-save'], deps)).toBe(0);
+    expect(await main([URL_, '--seo', '--no-save', '--runs', '1'], all())).toBe(0);
     expect(out.join('')).toContain('not saved (--no-save)');
     expect(await readdir(dir)).toEqual([]);
   });
 
-  it('validates the url as the measure path does: a bad one is refused before any call, a private one warns', async () => {
-    expect(await main(['ftp://example.com/', '--seo'], deps)).toBe(1);
-    expect(err.join('')).toMatch(/error: unsupported protocol/);
-    expect(requests).toHaveLength(0);
-
-    err.length = 0;
-    expect(await main(['http://localhost:3000/', '--seo', '--no-save'], deps)).toBe(0);
-    expect(requests).toHaveLength(1);
-    expect(err.join('')).toMatch(/warning: "localhost" looks like a local or private host/);
+  it('a report from before runs read every category says so', async () => {
+    expect(await main([URL_, '--runs', '1'], { fetchImpl: allCategories(true), sleepImpl: async () => {} })).toBe(0);
+    const reportId = reportIdIn(out.join(''));
+    expect(await main(['--reportId', reportId, '--seo'], all())).toBe(1);
+    expect(err.join('')).toContain(`error: report ${reportId} has no seo data`);
   });
 
-  it('notes a missing API key before the call, as a warning', async () => {
-    delete process.env.PSI_API_KEY;
-    expect(await main([URL_, '--seo', '--no-save'], deps)).toBe(0);
-    expect(new URL(requests[0]!).searchParams.get('key')).toBeNull();
-    expect(err.join('')).toMatch(/warning: PSI_API_KEY is not set/);
+  it('refuses a bad url before any call', async () => {
+    expect(await main(['ftp://example.com/', '--seo'], all())).toBe(1);
+    expect(err.join('')).toMatch(/error: unsupported protocol/);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('--seoId and --seoList still read SEO checks saved by the older --seo', async () => {
+    const check = normalizeSeo(RAW, { url: URL_, strategy: 'desktop', seoId: '2026-11-26T10-00-00Z-desktop-seo' });
+    await saveSeoCheck(check, dir);
+    expect(await main(['--seoId', check.seoId, '--json'], deps)).toBe(0);
+    expect(JSON.parse(out.join(''))).toMatchObject({ seoId: check.seoId, url: URL_, score: 100 });
+    out.length = 0;
+    expect(await main(['--seoId', check.seoId], deps)).toBe(0);
+    expect(out.join('')).toContain(`SEO  ${URL_}`);
+    expect(out.join('')).toContain(`UTC · ${check.seoId}`);
+    out.length = 0;
+    expect(await main(['--seoList'], deps)).toBe(0);
+    expect(out.join('')).toMatch(new RegExp(`SEO CHECKS  1 saved, newest first[\\s\\S]*${check.seoId}`));
+    expect(requests).toHaveLength(0);
   });
 
   it('an unknown --seoId is a clear error and exit 1, like a missing --reportId', async () => {
